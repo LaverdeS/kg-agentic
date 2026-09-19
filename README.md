@@ -31,7 +31,7 @@ The official [CORDIS EURIO Knowledge Graph](https://cordis.europa.eu/about/sparq
 
 EURIO already supplies the knowledge graph. This project adds an investigation and recommendation layer over that foundation. Graphiti with Neo4j is the selected initial backend for dated evidence memory.
 
-The first niche will be selected for its evidence quality, connected relationships, consulting relevance, temporal changes, evaluation potential, and opportunity for differentiated insight.
+The first niche is cement carbon-capture retrofit diligence: helping a producer's engineering team shortlist capture approaches and complementary partners for a site-specific feasibility study. The initial evidence scope connects CEMCAP, LEILAC2, and HERCCULES. The intended brief will distinguish tested results from planned demonstrations and make differences in capture boundaries, utility requirements, and cost assumptions explicit.
 
 ## Recommendations that can be audited
 

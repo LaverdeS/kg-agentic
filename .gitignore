@@ -11,6 +11,7 @@
 /.scratch/
 /graft/
 /.ignore
+/docs/research/
 
 # Node dependencies used by the local Graft harness
 /node_modules/
