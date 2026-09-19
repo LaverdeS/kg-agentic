@@ -1,0 +1,25 @@
+# Agent harness and composable skills
+/.agents/
+/.codex/
+/.claude/
+/AGENTS.md
+/CLAUDE.md
+/skills-lock.json
+/docs/agents/
+
+# Local agent plans, indexes, and search configuration
+/.scratch/
+/graft/
+/.ignore
+
+# Node dependencies used by the local Graft harness
+/node_modules/
+/package.json
+/package-lock.json
+
+# Local editor and environment files
+/.idea/
+/.vscode/
+/.env
+/.env.*
+!/.env.example
