@@ -1,0 +1,37 @@
+{
+  "_recording": {
+    "source": "https://cordis.europa.eu/datalab/sparql-api",
+    "retrieved_at": "2026-09-20T00:00:00+00:00"
+  },
+  "results": {
+    "bindings": [
+      {
+        "project": {"type": "uri", "value": "http://data.europa.eu/s66/resource/projects/91b4e591-b2dd-357a-9556-45feba981888"},
+        "id": {"type": "literal", "value": "641185"},
+        "title": {"type": "literal", "value": "CO2 capture from cement production"},
+        "abstract": {"type": "literal", "value": "CEMCAP will identify CO2 capture technologies with potential to be retrofitted to existing cement plants and formulate a techno-economic decision-basis."},
+        "startDate": {"type": "typed-literal", "value": "2015-05-01"},
+        "endDate": {"type": "typed-literal", "value": "2018-10-31"},
+        "status": {"type": "literal", "value": "CLOSED"}
+      },
+      {
+        "project": {"type": "uri", "value": "http://data.europa.eu/s66/resource/projects/a3628245-f605-33d4-81ec-10086462f8a1"},
+        "id": {"type": "literal", "value": "884170"},
+        "title": {"type": "literal", "value": "LOW EMISSIONS INTENSITY LIME AND CEMENT 2: DEMONSTRATION SCALE"},
+        "abstract": {"type": "literal", "value": "LEILAC2 seeks to scale direct separation and demonstrate how it can be retrofitted to cement plants."},
+        "startDate": {"type": "typed-literal", "value": "2020-04-01"},
+        "endDate": {"type": "typed-literal", "value": "2025-03-31"},
+        "status": {"type": "literal", "value": "SIGNED"}
+      },
+      {
+        "project": {"type": "uri", "value": "http://data.europa.eu/s66/resource/projects/4bdcdbb5-0dac-357a-94e6-98df709eccad"},
+        "id": {"type": "literal", "value": "101096691"},
+        "title": {"type": "literal", "value": "HERCCULES: HEROES IN SOUTHERN EUROPE TO DECARBONIZE INDUSTRY WITH CCUS"},
+        "abstract": {"type": "literal", "value": "HERCCULES aims to demonstrate flexible and retrofittable capture technologies and perform experimentally-supported techno-economic analyses."},
+        "startDate": {"type": "typed-literal", "value": "2023-01-01"},
+        "endDate": {"type": "typed-literal", "value": "2027-12-31"},
+        "status": {"type": "literal", "value": "SIGNED"}
+      }
+    ]
+  }
+}

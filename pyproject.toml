@@ -1,0 +1,52 @@
+[build-system]
+requires = ["hatchling==1.27.0"]
+build-backend = "hatchling.build"
+
+[project]
+name = "kg-agentic"
+version = "0.1.0"
+description = "Evidence-led CORDIS consulting investigations over EURIO and Graphiti"
+readme = "README.md"
+requires-python = ">=3.12,<3.14"
+dependencies = [
+  "graphiti-core==0.30.2",
+  "httpx==0.28.1",
+  "openai==2.26.0",
+  "python-dotenv==1.2.2",
+  "truststore==0.10.4",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pyright==1.1.405",
+  "pytest==8.4.2",
+  "pytest-asyncio==1.2.0",
+  "ruff==0.13.2",
+]
+
+[project.scripts]
+kg-agentic = "kg_agentic.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/kg_agentic"]
+
+[tool.pytest.ini_options]
+addopts = "-ra --basetemp=.scratch/pytest"
+asyncio_mode = "auto"
+pythonpath = ["src"]
+testpaths = ["tests"]
+markers = ["live: requires EURIO network access, Neo4j, and model credentials"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
+
+[tool.pyright]
+include = ["src", "tests"]
+pythonVersion = "3.12"
+typeCheckingMode = "standard"
+venvPath = "."
+venv = ".venv"

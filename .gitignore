@@ -12,9 +12,15 @@
 /graft/
 /.ignore
 /docs/research/
+/var/
+
+# Python build and runtime artifacts
+__pycache__/
+*.py[cod]
 
 # Node dependencies used by the local Graft harness
 /node_modules/
+/.venv/
 /package.json
 /package-lock.json
 

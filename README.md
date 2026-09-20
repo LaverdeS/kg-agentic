@@ -33,6 +33,65 @@ EURIO already supplies the knowledge graph. This project adds an investigation a
 
 The first niche is cement carbon-capture retrofit diligence: helping a producer's engineering team shortlist capture approaches and complementary partners for a site-specific feasibility study. The initial evidence scope connects CEMCAP, LEILAC2, and HERCCULES. The intended brief will distinguish tested results from planned demonstrations and make differences in capture boundaries, utility requirements, and cost assumptions explicit.
 
+## Current vertical slice
+
+The repository now contains a bounded end-to-end investigation path for that niche. It queries
+live EURIO relationships, ingests source-qualified CORDIS project/result records into Graphiti on
+Neo4j, retrieves both structural paths and semantic evidence, and asks an OpenAI model for a
+structured brief. A support gate removes every material generated claim that cannot be resolved to
+retrieved evidence with an HTTP citation. If paths, evidence, or supported claims are missing, the
+agent abstains instead of manufacturing an answer.
+
+This is deliberately a current-evidence slice. Historical `--as-of` requests are rejected before
+retrieval because reliable publication-time eligibility is not yet available for all selected
+CORDIS records. The seed corpus is also intentionally small: three project records and at most two
+result records per project for CEMCAP (`641185`), LEILAC2 (`884170`), and HERCCULES (`101096691`).
+
+## Run locally
+
+Prerequisites are Python 3.12 or 3.13, [uv](https://docs.astral.sh/uv/), Docker Desktop, an OpenAI
+API key with available API credit, and network access to the public EURIO SPARQL endpoint.
+
+```powershell
+uv sync --extra dev
+Copy-Item .env.example .env
+```
+
+Fill `OPENAI_API_KEY` and `NEO4J_PASSWORD` in the ignored `.env` file yourself. Do not commit that
+file. The remaining settings have runnable local defaults; `.env.example` documents the model,
+embedding, concurrency, evidence-limit, and data-directory overrides.
+
+Start Neo4j, ingest the bounded corpus once, and run the current investigation:
+
+```powershell
+docker compose up -d neo4j
+uv run kg-agentic ingest
+uv run kg-agentic investigate
+```
+
+Ingestion stores versioned raw source payloads under the ignored `var/corpora/` directory and skips
+unchanged source versions on subsequent runs. Both commands contact real services and fail visibly
+when EURIO, Neo4j, or OpenAI is unavailable; there is no synthetic production fallback.
+
+Useful checks and alternate output are:
+
+```powershell
+uv run kg-agentic investigate --json
+uv run kg-agentic investigate --as-of 2025-01-01
+uv run kg-agentic evaluate
+uv run pytest
+uv run ruff check .
+uv run pyright
+```
+
+The historical command exits non-zero with an explicit unsupported status. The live integration
+test is opt-in because it incurs API calls:
+
+```powershell
+$env:RUN_LIVE = "1"
+uv run pytest tests/test_live_stack.py -q
+```
+
 ## Recommendations that can be audited
 
 A brief should distinguish source-backed facts, source-reported claims, model extractions, and agent hypotheses. Each supported claim should lead back to an identifiable source and the relevant passage or relationship.

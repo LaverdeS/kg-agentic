@@ -1,0 +1,26 @@
+[
+  {
+    "id": "cement-current-1",
+    "question": "Which capture pathways and complementary partners should a cement producer shortlist for a site-specific retrofit feasibility study, and which reported comparisons have incompatible capture, utility, or cost boundaries?",
+    "as_of": null,
+    "reference_identifiers": ["641185", "884170", "101096691"],
+    "acceptable_support": [
+      "A canonical EURIO organisation-project-result path",
+      "Corpus-scoped Graphiti evidence with a resolvable source URL"
+    ],
+    "abstain_when": [
+      "Asked for a cheapest technology without site assumptions",
+      "Evidence contains objectives but no demonstrated outcome"
+    ]
+  },
+  {
+    "id": "cement-historical-1",
+    "question": "What pilot-scale ammonia-capture evidence was public by the end of 2018?",
+    "as_of": "2018-12-31",
+    "reference_identifiers": ["10.3303/CET1869025", "641185"],
+    "acceptable_support": [],
+    "abstain_when": [
+      "Always in this increment: historical eligibility is not implemented"
+    ]
+  }
+]

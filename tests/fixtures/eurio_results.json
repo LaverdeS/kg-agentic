@@ -1,0 +1,24 @@
+{
+  "_recording": {
+    "source": "https://cordis.europa.eu/datalab/sparql-api",
+    "retrieved_at": "2026-09-19T16:31:35.054517+00:00",
+    "parent_sha256": "dfb36458aebcb7a323c4916d4063dc127837861298678272e55aea23d01eecdd"
+  },
+  "head": {"vars": ["project", "result"]},
+  "results": {
+    "bindings": [
+      {
+        "project": {"type": "uri", "value": "http://data.europa.eu/s66/resource/projects/91b4e591-b2dd-357a-9556-45feba981888"},
+        "result": {"type": "uri", "value": "http://data.europa.eu/s66/resource/results/2cc39403-e975-327f-8657-8df803af027d"}
+      },
+      {
+        "project": {"type": "uri", "value": "http://data.europa.eu/s66/resource/projects/a3628245-f605-33d4-81ec-10086462f8a1"},
+        "result": {"type": "uri", "value": "http://data.europa.eu/s66/resource/results/461c02da-5450-3ad1-ba61-10d85f5c4583"}
+      },
+      {
+        "project": {"type": "uri", "value": "http://data.europa.eu/s66/resource/projects/4bdcdbb5-0dac-357a-94e6-98df709eccad"},
+        "result": {"type": "uri", "value": "http://data.europa.eu/s66/resource/results/2d34f8d6-c3ec-3593-8bb1-12e4a264a6a9"}
+      }
+    ]
+  }
+}

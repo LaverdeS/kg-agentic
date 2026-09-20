@@ -1,0 +1,30 @@
+{
+  "_recording": {
+    "source": "https://cordis.europa.eu/datalab/sparql-api",
+    "retrieved_at": "2026-09-19T16:31:34.278643+00:00",
+    "parent_sha256": "3077ab4971b8b0dff0a91b531549dc0ad5bcf5c2cc7fb5cda7858d4d1e407841"
+  },
+  "head": {"vars": ["project", "role", "roleLabel", "organisation"]},
+  "results": {
+    "bindings": [
+      {
+        "project": {"type": "uri", "value": "http://data.europa.eu/s66/resource/projects/91b4e591-b2dd-357a-9556-45feba981888"},
+        "role": {"type": "uri", "value": "http://data.europa.eu/s66/resource/organisationroles/9a23d532-9720-3e20-9ada-6b2fd6225b8d"},
+        "roleLabel": {"type": "literal", "value": "thirdParty"},
+        "organisation": {"type": "uri", "value": "http://data.europa.eu/s66/resource/organisations/5ddbaa23-06d6-39f8-8b9f-9fd78d53f149"}
+      },
+      {
+        "project": {"type": "uri", "value": "http://data.europa.eu/s66/resource/projects/a3628245-f605-33d4-81ec-10086462f8a1"},
+        "role": {"type": "uri", "value": "http://data.europa.eu/s66/resource/organisationroles/53dfc3f1-c10c-3844-8c6a-187c335d73f4"},
+        "roleLabel": {"type": "literal", "value": "thirdParty"},
+        "organisation": {"type": "uri", "value": "http://data.europa.eu/s66/resource/organisations/5ddbaa23-06d6-39f8-8b9f-9fd78d53f149"}
+      },
+      {
+        "project": {"type": "uri", "value": "http://data.europa.eu/s66/resource/projects/4bdcdbb5-0dac-357a-94e6-98df709eccad"},
+        "role": {"type": "uri", "value": "http://data.europa.eu/s66/resource/organisationroles/6b57a172-29c5-3b39-afd1-10b6c3e004cd"},
+        "roleLabel": {"type": "literal", "value": "coordinator"},
+        "organisation": {"type": "uri", "value": "http://data.europa.eu/s66/resource/organisations/5ddbaa23-06d6-39f8-8b9f-9fd78d53f149"}
+      }
+    ]
+  }
+}
