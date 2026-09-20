@@ -58,6 +58,7 @@ async def test_eurio_evidence_keeps_record_text_distinct_from_result_metadata() 
     assert records[0].event_at is not None
     assert records[0].event_at.isoformat().startswith("2015-05-01")
     assert result_metadata[0].text.startswith("Metadata-only EURIO result record:")
+    assert result_metadata[0].source_url == result_metadata[0].canonical_entity_iris[1]
     assert result_metadata[0].canonical_entity_iris == (
         PROJECTS[0],
         "http://data.europa.eu/s66/resource/results/2cc39403-e975-327f-8657-8df803af027d",

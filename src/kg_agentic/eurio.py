@@ -50,9 +50,14 @@ class HttpSparqlQueryClient:
 class EurioStructuralSource:
     """Map official EURIO bindings to bounded typed, directed paths."""
 
-    def __init__(self, query_client: SparqlQueryClient) -> None:
+    def __init__(
+        self,
+        query_client: SparqlQueryClient,
+        *,
+        source_url: str = DEFAULT_SPARQL_ENDPOINT,
+    ) -> None:
         self._query_client = query_client
-        self._source_url = getattr(query_client, "endpoint", DEFAULT_SPARQL_ENDPOINT)
+        self._source_url = source_url
 
     async def find_paths(self, *, project_iris: tuple[str, ...]) -> tuple[StructuralPath, ...]:
         values = _project_values(project_iris)
@@ -295,7 +300,7 @@ def _result_documents(
                 dataset_id="cordis-eurio",
                 corpus_id=corpus_id,
                 source_id=f"result-{result_id}",
-                source_url="https://cordis.europa.eu/project/results",
+                source_url=result,
                 source_category="result_metadata",
                 text=description,
                 passage=title,

@@ -22,11 +22,14 @@ class FakeResponses:
         schema = kwargs["text_format"]
         return SimpleNamespace(
             output_parsed=schema(
-                decision="Run a site-specific feasibility study.",
-                recommendation="Compare two capture pathways.",
-                alternatives=["Do not shortlist until utility data is available."],
-                uncertainty="Project objectives are not demonstrated outcomes.",
-                next_action="Request normalized utility and cost boundaries.",
+                decision={"text": "Run a feasibility study.", "evidence_ids": ["evidence-1"]},
+                recommendation={"text": "Compare two pathways.", "evidence_ids": ["evidence-1"]},
+                alternatives=[{"text": "Delay the shortlist.", "evidence_ids": ["evidence-1"]}],
+                uncertainty={
+                    "text": "Objectives are not outcomes.",
+                    "evidence_ids": ["evidence-1"],
+                },
+                next_action={"text": "Request normalized data.", "evidence_ids": ["evidence-1"]},
                 claims=[
                     {
                         "text": "CEMCAP reports retrofit comparison objectives.",
@@ -75,6 +78,7 @@ async def test_openai_brief_uses_structured_output_and_supplied_evidence_ids() -
     )
 
     assert draft.claims[0].evidence_ids == ("evidence-1",)
+    assert draft.recommendation.evidence_ids == ("evidence-1",)
     assert client.responses.kwargs is not None
     assert client.responses.kwargs["model"] == "gpt-test"
     assert client.responses.kwargs["max_output_tokens"] == 800

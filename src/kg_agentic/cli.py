@@ -16,8 +16,8 @@ from kg_agentic.config import Settings, build_runtime
 from kg_agentic.eurio import EurioEvidenceSource, EurioStructuralSource, HttpSparqlQueryClient
 from kg_agentic.graphiti_adapter import GraphitiEvidenceMemory
 from kg_agentic.ingestion import FileSourceArchive, IngestionPipeline, JsonVersionIndex
-from kg_agentic.investigation import InvestigationAgent
-from kg_agentic.models import InvestigationRequest, InvestigationResult
+from kg_agentic.investigation import InvestigationAgent, unsupported_historical_result
+from kg_agentic.models import InvestigationRequest, InvestigationResult, SupportedClaim
 from kg_agentic.openai_brief import OpenAIBriefGenerator
 
 
@@ -81,7 +81,7 @@ async def _ingest() -> int:
 async def _investigate(question: str, as_of_value: str | None, json_output: bool) -> int:
     as_of = _parse_as_of(as_of_value)
     if as_of is not None:
-        result = _unsupported_historical_result(question, as_of)
+        result = unsupported_historical_result(question, as_of)
         _print_result(result, json_output=json_output)
         return 2
 
@@ -120,23 +120,6 @@ async def _investigate(question: str, as_of_value: str | None, json_output: bool
         await runtime.close()
 
 
-def _unsupported_historical_result(question: str, as_of: datetime) -> InvestigationResult:
-    from kg_agentic.models import InvestigationPlan, TraceStep
-
-    return InvestigationResult(
-        status="unsupported_historical_request",
-        plan=InvestigationPlan(question=question, actions=("Reject unsupported historical mode.",)),
-        trace=(TraceStep(action="plan", detail=f"as_of={as_of.isoformat()}"),),
-        paths=(),
-        evidence=(),
-        brief=None,
-        gaps=(
-            "Historical evidence eligibility is not implemented; "
-            "current evidence was not queried.",
-        ),
-    )
-
-
 def _print_result(result: InvestigationResult, *, json_output: bool) -> None:
     if json_output:
         print(json.dumps(asdict(result), default=_json_default, indent=2))
@@ -148,23 +131,27 @@ def _print_result(result: InvestigationResult, *, json_output: bool) -> None:
             print(f"- {gap}")
         return
     brief = result.brief
-    print(f"# Recommendation\n\n{brief.recommendation}\n")
-    print(f"## Decision\n\n{brief.decision}\n")
+    print(f"# Recommendation\n\n{_format_statement(brief.recommendation)}\n")
+    print(f"## Decision\n\n{_format_statement(brief.decision)}\n")
     print("## Supported claims\n")
     for claim in brief.claims:
-        references = ", ".join(
-            f"[{citation.evidence_id}]({citation.source_url})" for citation in claim.citations
-        )
-        print(f"- {claim.text} — {references}")
+        print(f"- {_format_statement(claim)}")
     print("\n## Alternatives\n")
     for alternative in brief.alternatives:
-        print(f"- {alternative}")
-    print(f"\n## Uncertainty\n\n{brief.uncertainty}")
-    print(f"\n## Next action\n\n{brief.next_action}")
+        print(f"- {_format_statement(alternative)}")
+    print(f"\n## Uncertainty\n\n{_format_statement(brief.uncertainty)}")
+    print(f"\n## Next action\n\n{_format_statement(brief.next_action)}")
     if result.gaps:
         print("\n## Gaps\n")
         for gap in result.gaps:
             print(f"- {gap}")
+
+
+def _format_statement(statement: SupportedClaim) -> str:
+    references = ", ".join(
+        f"[{citation.evidence_id}]({citation.source_url})" for citation in statement.citations
+    )
+    return f"{statement.text} — {references}"
 
 
 def _parse_as_of(value: str | None) -> datetime | None:

@@ -1,10 +1,12 @@
 from collections.abc import Sequence
+from datetime import datetime
 from typing import Protocol
 from urllib.parse import urlparse
 
 from kg_agentic.models import (
     Citation,
     DraftBrief,
+    DraftClaim,
     EvidenceItem,
     InvestigationPlan,
     InvestigationRequest,
@@ -77,18 +79,7 @@ class InvestigationAgent:
         trace = [TraceStep(action="plan", count=len(plan.actions))]
 
         if request.as_of is not None:
-            return InvestigationResult(
-                status="unsupported_historical_request",
-                plan=plan,
-                trace=tuple(trace),
-                paths=(),
-                evidence=(),
-                brief=None,
-                gaps=(
-                    "Historical investigations are not implemented; "
-                    "current evidence was not queried.",
-                ),
-            )
+            return unsupported_historical_result(question, request.as_of, plan=plan)
 
         paths = await self._structural_source.find_paths(project_iris=self._project_iris)
         trace.append(TraceStep(action="retrieve_structural_paths", count=len(paths)))
@@ -146,42 +137,74 @@ def _resolve_supported_claims(
     draft: DraftBrief, evidence: tuple[EvidenceItem, ...]
 ) -> tuple[RecommendationBrief | None, tuple[str, ...]]:
     evidence_by_id = {item.id: item for item in evidence}
-    supported_claims: list[SupportedClaim] = []
     gaps: list[str] = []
 
-    for claim in draft.claims:
-        citations: list[Citation] = []
-        for evidence_id in claim.evidence_ids:
-            item = evidence_by_id.get(evidence_id)
-            if item is None or not _is_resolvable_url(item.source_url):
-                continue
-            citations.append(
-                Citation(
-                    evidence_id=item.id,
-                    source_url=item.source_url,
-                    source_category=item.source_category,
-                    passage=item.passage or item.text,
-                    content_hash=item.content_hash,
-                )
+    def resolve(claim: DraftClaim) -> SupportedClaim | None:
+        citations = tuple(
+            Citation(
+                evidence_id=item.id,
+                source_url=item.source_url,
+                source_category=item.source_category,
+                passage=item.passage or item.text,
+                content_hash=item.content_hash,
             )
+            for evidence_id in claim.evidence_ids
+            if (item := evidence_by_id.get(evidence_id)) is not None
+            and _is_resolvable_url(item.source_url)
+        )
         if not citations:
-            gaps.append(f"Unsupported material claim omitted: {claim.text}")
-            continue
-        supported_claims.append(SupportedClaim(text=claim.text, citations=tuple(citations)))
+            gaps.append(f"Unsupported material statement omitted: {claim.text}")
+            return None
+        return SupportedClaim(text=claim.text, citations=citations)
 
-    if not supported_claims:
-        return None, tuple(gaps or ("The generated brief contained no supported claims.",))
+    decision = resolve(draft.decision)
+    recommendation = resolve(draft.recommendation)
+    uncertainty = resolve(draft.uncertainty)
+    next_action = resolve(draft.next_action)
+    alternatives = tuple(filter(None, (resolve(item) for item in draft.alternatives)))
+    supported_claims = tuple(filter(None, (resolve(item) for item in draft.claims)))
+
+    if (
+        decision is None
+        or recommendation is None
+        or uncertainty is None
+        or next_action is None
+    ):
+        return None, tuple(gaps)
 
     return (
         RecommendationBrief(
-            decision=draft.decision,
-            recommendation=draft.recommendation,
-            alternatives=draft.alternatives,
-            uncertainty=draft.uncertainty,
-            next_action=draft.next_action,
-            claims=tuple(supported_claims),
+            decision=decision,
+            recommendation=recommendation,
+            alternatives=alternatives,
+            uncertainty=uncertainty,
+            next_action=next_action,
+            claims=supported_claims,
         ),
         tuple(gaps),
+    )
+
+
+def unsupported_historical_result(
+    question: str,
+    as_of: datetime,
+    *,
+    plan: InvestigationPlan | None = None,
+) -> InvestigationResult:
+    bounded_plan = plan or InvestigationPlan(
+        question=question,
+        actions=("Reject unsupported historical mode before retrieval.",),
+    )
+    return InvestigationResult(
+        status="unsupported_historical_request",
+        plan=bounded_plan,
+        trace=(TraceStep(action="plan", detail=f"as_of={as_of.isoformat()}"),),
+        paths=(),
+        evidence=(),
+        brief=None,
+        gaps=(
+            "Historical evidence eligibility is not implemented; current evidence was not queried.",
+        ),
     )
 
 

@@ -59,12 +59,13 @@ class RecordedEvidenceMemory:
 
 class ControlledBriefGenerator:
     async def generate(self, *, question, plan, paths, evidence):
+        support = ("cordis:101096691:record:v1",)
         return DraftBrief(
-            decision="Prioritise a feasibility study, not a procurement decision.",
-            recommendation="Keep HERCCULES as an emerging validation path.",
-            alternatives=("Use mature CEMCAP evidence as the comparison baseline.",),
-            uncertainty="HERCCULES had not reported experimental results in the cited record.",
-            next_action="Request current pilot results and site-specific utility data.",
+            decision=DraftClaim("Prioritise a feasibility study.", support),
+            recommendation=DraftClaim("Keep HERCCULES as a validation path.", support),
+            alternatives=(DraftClaim("Use a comparison baseline.", support),),
+            uncertainty=DraftClaim("The cited record reports no experimental results.", support),
+            next_action=DraftClaim("Request current pilot results.", support),
             claims=(
                 DraftClaim(
                     text="HERCCULES had no experimental results in the cited reporting period.",
@@ -77,11 +78,13 @@ class ControlledBriefGenerator:
 class UnsupportedBriefGenerator:
     async def generate(self, *, question, plan, paths, evidence):
         return DraftBrief(
-            decision="Do not decide from unsupported output.",
-            recommendation="A claim with no retrieved source should be removed.",
+            decision=DraftClaim("Do not decide from unsupported output.", ("missing",)),
+            recommendation=DraftClaim(
+                "A claim with no retrieved source should be removed.", ("missing",)
+            ),
             alternatives=(),
-            uncertainty="The model cited an unknown evidence identifier.",
-            next_action="Retrieve an authoritative source.",
+            uncertainty=DraftClaim("The model cited an unknown evidence identifier.", ("missing",)),
+            next_action=DraftClaim("Retrieve an authoritative source.", ("missing",)),
             claims=(DraftClaim(text="Unsupported material claim.", evidence_ids=("missing",)),),
         )
 
@@ -140,7 +143,7 @@ async def test_unsupported_generated_claim_is_removed_and_agent_abstains() -> No
 
     assert result.status == "abstained"
     assert result.brief is None
-    assert result.gaps == ("Unsupported material claim omitted: Unsupported material claim.",)
+    assert "Unsupported material statement omitted" in result.gaps[0]
 
 
 @pytest.mark.asyncio

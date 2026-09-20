@@ -75,11 +75,11 @@ class DraftClaim:
 
 @dataclass(frozen=True, slots=True)
 class DraftBrief:
-    decision: str
-    recommendation: str
-    alternatives: tuple[str, ...]
-    uncertainty: str
-    next_action: str
+    decision: DraftClaim
+    recommendation: DraftClaim
+    alternatives: tuple[DraftClaim, ...]
+    uncertainty: DraftClaim
+    next_action: DraftClaim
     claims: tuple[DraftClaim, ...]
 
 
@@ -100,11 +100,11 @@ class SupportedClaim:
 
 @dataclass(frozen=True, slots=True)
 class RecommendationBrief:
-    decision: str
-    recommendation: str
-    alternatives: tuple[str, ...]
-    uncertainty: str
-    next_action: str
+    decision: SupportedClaim
+    recommendation: SupportedClaim
+    alternatives: tuple[SupportedClaim, ...]
+    uncertainty: SupportedClaim
+    next_action: SupportedClaim
     claims: tuple[SupportedClaim, ...]
 
 

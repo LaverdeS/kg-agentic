@@ -22,11 +22,11 @@ class _ClaimOutput(BaseModel):
 class _BriefOutput(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    decision: str
-    recommendation: str
-    alternatives: list[str]
-    uncertainty: str
-    next_action: str
+    decision: _ClaimOutput
+    recommendation: _ClaimOutput
+    alternatives: list[_ClaimOutput]
+    uncertainty: _ClaimOutput
+    next_action: _ClaimOutput
     claims: list[_ClaimOutput]
 
 
@@ -61,8 +61,9 @@ class OpenAIBriefGenerator:
                 "source-reported claims, unverified model extractions, and hypotheses according "
                 "to their labels. Objectives do not prove achievement; participation does not "
                 "prove capability or authorship; missing public data does not prove absence. "
-                "Every material claim must list one or more exact supplied evidence IDs. Do not "
-                "expose private reasoning; return only the requested brief fields."
+                "Every brief field is a support-bearing statement and must list one or more exact "
+                "supplied evidence IDs. Do not expose private reasoning; return only the requested "
+                "brief fields."
             ),
             input=json.dumps(context, ensure_ascii=False),
             text_format=_BriefOutput,
@@ -78,16 +79,20 @@ class OpenAIBriefGenerator:
             for name in ("input_tokens", "output_tokens", "total_tokens")
         }
         return DraftBrief(
-            decision=parsed.decision,
-            recommendation=parsed.recommendation,
-            alternatives=tuple(parsed.alternatives),
-            uncertainty=parsed.uncertainty,
-            next_action=parsed.next_action,
+            decision=_draft_claim(parsed.decision),
+            recommendation=_draft_claim(parsed.recommendation),
+            alternatives=tuple(_draft_claim(item) for item in parsed.alternatives),
+            uncertainty=_draft_claim(parsed.uncertainty),
+            next_action=_draft_claim(parsed.next_action),
             claims=tuple(
                 DraftClaim(text=claim.text, evidence_ids=tuple(claim.evidence_ids))
                 for claim in parsed.claims
             ),
-        )
+    )
+
+
+def _draft_claim(value: _ClaimOutput) -> DraftClaim:
+    return DraftClaim(text=value.text, evidence_ids=tuple(value.evidence_ids))
 
 
 def _path_payload(path: StructuralPath) -> list[dict[str, object]]:

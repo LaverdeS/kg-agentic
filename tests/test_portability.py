@@ -53,12 +53,13 @@ class InspectionMemory:
 
 class MaintenanceBrief:
     async def generate(self, **kwargs):
+        support = ("roads:inspection:7:v1",)
         return DraftBrief(
-            decision="Commission a bearing-replacement design.",
-            recommendation="Validate the inspection finding on site.",
-            alternatives=("Increase monitoring frequency.",),
-            uncertainty="The fixture contains one inspection.",
-            next_action="Perform an on-site bearing assessment.",
+            decision=DraftClaim("Commission a bearing-replacement design.", support),
+            recommendation=DraftClaim("Validate the inspection finding on site.", support),
+            alternatives=(DraftClaim("Increase monitoring frequency.", support),),
+            uncertainty=DraftClaim("The fixture contains one inspection.", support),
+            next_action=DraftClaim("Perform an on-site bearing assessment.", support),
             claims=(
                 DraftClaim(
                     "An inspection recommends replacement.",

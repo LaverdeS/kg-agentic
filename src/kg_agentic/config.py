@@ -41,7 +41,7 @@ class Settings:
             model=os.getenv("OPENAI_MODEL", "gpt-5-mini"),
             small_model=os.getenv("OPENAI_SMALL_MODEL", "gpt-5-mini"),
             embedding_model=os.getenv("OPENAI_EMBEDDING_MODEL", "text-embedding-3-small"),
-            model_max_output_tokens=_positive_int("MODEL_MAX_OUTPUT_TOKENS", 1200),
+            model_max_output_tokens=_positive_int("MODEL_MAX_OUTPUT_TOKENS", 3000),
             graphiti_max_tokens=_positive_int("GRAPHITI_MAX_TOKENS", 4096),
             graphiti_max_coroutines=_positive_int("GRAPHITI_MAX_COROUTINES", 4),
             evidence_limit=_positive_int("INVESTIGATION_EVIDENCE_LIMIT", 8),
