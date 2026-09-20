@@ -4,8 +4,8 @@ from types import SimpleNamespace
 
 import pytest
 
-from kg_agentic.graphiti_adapter import GraphitiEvidenceMemory
-from kg_agentic.models import EvidenceItem, EvidenceKind
+from kg_agentic.infrastructure.graphiti_adapter import GraphitiEvidenceMemory
+from kg_agentic.knowledge.models import EvidenceItem, EvidenceKind
 
 
 class RecordingGraphiti:
@@ -47,6 +47,8 @@ def evidence_item() -> EvidenceItem:
         canonical_entity_iris=("http://data.europa.eu/s66/resource/projects/example",),
         updated_at=None,
         ingested_at=datetime(2026, 9, 20, 1, tzinfo=UTC),
+        publication_year=2018,
+        publication_precision="year",
     )
 
 
@@ -92,4 +94,6 @@ def adapter_payload(item: EvidenceItem) -> dict[str, object]:
         "canonical_entity_iris": list(item.canonical_entity_iris),
         "updated_at": None,
         "ingested_at": item.ingested_at.isoformat(),
+        "publication_year": item.publication_year,
+        "publication_precision": item.publication_precision,
     }

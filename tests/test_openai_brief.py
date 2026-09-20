@@ -3,14 +3,14 @@ from types import SimpleNamespace
 
 import pytest
 
-from kg_agentic.models import (
+from kg_agentic.infrastructure.openai_brief import OpenAIBriefGenerator
+from kg_agentic.knowledge.models import (
     EvidenceItem,
     EvidenceKind,
     InvestigationPlan,
     Relationship,
     StructuralPath,
 )
-from kg_agentic.openai_brief import OpenAIBriefGenerator
 
 
 class FakeResponses:

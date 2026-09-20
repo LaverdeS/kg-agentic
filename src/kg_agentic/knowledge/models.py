@@ -47,6 +47,8 @@ class EvidenceItem:
     canonical_entity_iris: tuple[str, ...] = ()
     updated_at: datetime | None = None
     ingested_at: datetime | None = None
+    publication_year: int | None = None
+    publication_precision: Literal["year"] | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -65,6 +67,25 @@ class SourceDocument:
     event_at: datetime | None
     retrieved_at: datetime
     raw_payload: bytes | None = None
+    publication_year: int | None = None
+    publication_precision: Literal["year"] | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class PublicEvidenceSpec:
+    """A reviewed public document whose bytes are retained with a bounded passage."""
+
+    dataset_id: str
+    corpus_id: str
+    source_id: str
+    source_url: str
+    source_category: str
+    text: str
+    passage: str
+    canonical_entity_iris: tuple[str, ...]
+    publication_at: datetime | None = None
+    publication_year: int | None = None
+    publication_precision: Literal["year"] | None = None
 
 
 @dataclass(frozen=True, slots=True)

@@ -1,10 +1,10 @@
 import json
 from datetime import datetime
-from typing import Any, Protocol
+from typing import Any, Literal, Protocol
 
 from graphiti_core.nodes import EpisodeType, EpisodicNode
 
-from kg_agentic.models import EvidenceItem, EvidenceKind
+from kg_agentic.knowledge.models import EvidenceItem, EvidenceKind
 
 
 class EpisodeReader(Protocol):
@@ -96,6 +96,8 @@ def _to_payload(item: EvidenceItem) -> dict[str, object]:
         "canonical_entity_iris": list(item.canonical_entity_iris),
         "updated_at": _iso(item.updated_at),
         "ingested_at": _iso(item.ingested_at),
+        "publication_year": item.publication_year,
+        "publication_precision": item.publication_precision,
     }
 
 
@@ -123,6 +125,8 @@ def _from_payload(payload: object) -> EvidenceItem:
             canonical_entity_iris=tuple(canonical_iris),
             updated_at=_optional_datetime(payload.get("updated_at")),
             ingested_at=_optional_datetime(payload.get("ingested_at")),
+            publication_year=_optional_int(payload.get("publication_year")),
+            publication_precision=_optional_year_precision(payload.get("publication_precision")),
         )
     except (KeyError, TypeError, ValueError) as error:
         raise ValueError("Invalid Graphiti evidence episode") from error
@@ -146,6 +150,22 @@ def _optional_datetime(value: object) -> datetime | None:
 
 def _optional_string(value: object) -> str | None:
     return value if isinstance(value, str) else None
+
+
+def _optional_int(value: object) -> int | None:
+    if value is None:
+        return None
+    if not isinstance(value, int):
+        raise ValueError("integer or null is required")
+    return value
+
+
+def _optional_year_precision(value: object) -> Literal["year"] | None:
+    if value is None:
+        return None
+    if value != "year":
+        raise ValueError("year precision or null is required")
+    return "year"
 
 
 def _graphiti_group_id(corpus_id: str) -> str:

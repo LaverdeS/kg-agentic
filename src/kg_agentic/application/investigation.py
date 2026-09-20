@@ -3,7 +3,7 @@ from datetime import datetime
 from typing import Protocol
 from urllib.parse import urlparse
 
-from kg_agentic.models import (
+from kg_agentic.knowledge.models import (
     Citation,
     DraftBrief,
     DraftClaim,

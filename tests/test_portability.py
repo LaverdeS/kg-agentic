@@ -2,8 +2,8 @@ from datetime import UTC, datetime
 
 import pytest
 
-from kg_agentic.investigation import InvestigationAgent
-from kg_agentic.models import (
+from kg_agentic.application.investigation import InvestigationAgent
+from kg_agentic.knowledge.models import (
     DraftBrief,
     DraftClaim,
     EvidenceItem,

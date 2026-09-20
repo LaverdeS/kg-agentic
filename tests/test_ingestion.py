@@ -2,13 +2,13 @@ from datetime import UTC, datetime
 
 import pytest
 
-from kg_agentic.ingestion import (
+from kg_agentic.knowledge.ingestion import (
     FileSourceArchive,
     IngestionPipeline,
     InMemoryVersionIndex,
     JsonVersionIndex,
 )
-from kg_agentic.models import EvidenceKind, SourceDocument
+from kg_agentic.knowledge.models import EvidenceKind, SourceDocument
 
 
 class RecordingEpisodeSink:

@@ -3,7 +3,7 @@ from pathlib import Path
 
 import pytest
 
-from kg_agentic.eurio import EurioEvidenceSource, EurioStructuralSource
+from kg_agentic.infrastructure.eurio import EurioEvidenceSource, EurioStructuralSource
 
 FIXTURES = Path(__file__).parent / "fixtures"
 PROJECTS = (

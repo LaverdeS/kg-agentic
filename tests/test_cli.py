@@ -11,7 +11,7 @@ class ExternalServiceError(Exception):
 
 
 def test_cli_reports_external_service_failure_without_traceback(monkeypatch, capsys) -> None:
-    async def fail(_args):
+    async def fail(_args, **_kwargs):
         raise ExternalServiceError("service quota unavailable")
 
     monkeypatch.setattr(cli, "_dispatch", fail)
@@ -23,6 +23,17 @@ def test_cli_reports_external_service_failure_without_traceback(monkeypatch, cap
     captured = capsys.readouterr()
     log_line, message = captured.err.splitlines()
     assert stopped.value.code == 1
-    assert json.loads(log_line)["error_type"] == "ExternalServiceError"
+    record = json.loads(log_line)
+    assert record == {
+        "timestamp": record["timestamp"],
+        "event": "command_failed",
+        "run_id": record["run_id"],
+        "command": "ingest",
+        "source": "cordis-eurio",
+        "corpus": "cement-retrofit-v1",
+        "duration_ms": record["duration_ms"],
+        "error_type": "ExternalServiceError",
+    }
+    assert "message" not in record
     assert message == "error: service quota unavailable"
     assert "Traceback" not in captured.err

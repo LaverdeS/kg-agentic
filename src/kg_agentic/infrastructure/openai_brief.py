@@ -1,9 +1,9 @@
 import json
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
-from kg_agentic.models import (
+from kg_agentic.knowledge.models import (
     DraftBrief,
     DraftClaim,
     EvidenceItem,
@@ -15,8 +15,8 @@ from kg_agentic.models import (
 class _ClaimOutput(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    text: str
-    evidence_ids: list[str]
+    text: str = Field(max_length=120)
+    evidence_ids: list[str] = Field(min_length=1, max_length=1)
 
 
 class _BriefOutput(BaseModel):
@@ -24,10 +24,10 @@ class _BriefOutput(BaseModel):
 
     decision: _ClaimOutput
     recommendation: _ClaimOutput
-    alternatives: list[_ClaimOutput]
+    alternatives: list[_ClaimOutput] = Field(min_length=1, max_length=1)
     uncertainty: _ClaimOutput
     next_action: _ClaimOutput
-    claims: list[_ClaimOutput]
+    claims: list[_ClaimOutput] = Field(min_length=1, max_length=1)
 
 
 class OpenAIBriefGenerator:
@@ -63,7 +63,9 @@ class OpenAIBriefGenerator:
                 "prove capability or authorship; missing public data does not prove absence. "
                 "Every brief field is a support-bearing statement and must list one or more exact "
                 "supplied evidence IDs. Do not expose private reasoning; return only the requested "
-                "brief fields."
+                "brief fields. Keep every text field below 120 characters. "
+                "Cite exactly one evidence ID per field; give exactly one alternative and at most "
+                "one supporting claim. Do not repeat context or citations in prose."
             ),
             input=json.dumps(context, ensure_ascii=False),
             text_format=_BriefOutput,
@@ -117,6 +119,8 @@ def _evidence_payload(item: EvidenceItem) -> dict[str, object]:
         "source_url": item.source_url,
         "source_category": item.source_category,
         "publication_at": item.published_at.isoformat() if item.published_at else None,
+        "publication_year": item.publication_year,
+        "publication_precision": item.publication_precision,
         "event_at": item.event_at.isoformat() if item.event_at else None,
         "canonical_entity_iris": list(item.canonical_entity_iris),
     }

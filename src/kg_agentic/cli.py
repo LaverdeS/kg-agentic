@@ -11,34 +11,46 @@ from uuid import uuid4
 
 from dotenv import load_dotenv
 
-from kg_agentic.cement import CORPUS_ID, CURRENT_QUESTION, GROUP_ID, PROJECT_IRIS
-from kg_agentic.config import Settings, build_runtime
-from kg_agentic.eurio import EurioEvidenceSource, EurioStructuralSource, HttpSparqlQueryClient
-from kg_agentic.graphiti_adapter import GraphitiEvidenceMemory
-from kg_agentic.ingestion import FileSourceArchive, IngestionPipeline, JsonVersionIndex
-from kg_agentic.investigation import InvestigationAgent, unsupported_historical_result
-from kg_agentic.models import InvestigationRequest, InvestigationResult, SupportedClaim
-from kg_agentic.openai_brief import OpenAIBriefGenerator
+from kg_agentic.application.cement import CORPUS_ID, CURRENT_QUESTION
+from kg_agentic.infrastructure.bootstrap import ingest_cement_slice, investigate_cement_slice
+from kg_agentic.infrastructure.runtime import Settings
+from kg_agentic.knowledge.models import InvestigationRequest, InvestigationResult, SupportedClaim
 
 
 def main() -> None:
     parser = _parser()
     args = parser.parse_args()
     load_dotenv()
+    run_id = str(uuid4())
+    started = monotonic()
     try:
-        exit_code = asyncio.run(_dispatch(args))
+        exit_code = asyncio.run(_dispatch(args, run_id=run_id, started=started))
     except Exception as error:
-        _log("failure", error_type=type(error).__name__, message=str(error))
+        _log(
+            "command_failed",
+            run_id=run_id,
+            command=args.command,
+            source="cordis-eurio",
+            corpus=CORPUS_ID,
+            duration_ms=round((monotonic() - started) * 1000),
+            error_type=type(error).__name__,
+        )
         print(f"error: {error}", file=sys.stderr)
         raise SystemExit(1) from None
     raise SystemExit(exit_code)
 
 
-async def _dispatch(args: argparse.Namespace) -> int:
+async def _dispatch(args: argparse.Namespace, *, run_id: str, started: float) -> int:
     if args.command == "ingest":
-        return await _ingest()
+        return await _ingest(run_id=run_id, started=started)
     if args.command == "investigate":
-        return await _investigate(args.question, args.as_of, args.json)
+        return await _investigate(
+            args.question,
+            args.as_of,
+            args.json,
+            run_id=run_id,
+            started=started,
+        )
     if args.command == "evaluate":
         questions = json.loads(Path("evals/questions.json").read_text(encoding="utf-8"))
         print(json.dumps(questions, indent=2))
@@ -46,78 +58,55 @@ async def _dispatch(args: argparse.Namespace) -> int:
     raise ValueError(f"Unknown command: {args.command}")
 
 
-async def _ingest() -> int:
+async def _ingest(*, run_id: str | None = None, started: float | None = None) -> int:
     settings = Settings.from_environment()
-    run_id = str(uuid4())
-    started = monotonic()
+    run_id = run_id or str(uuid4())
+    started = started if started is not None else monotonic()
     _log("ingestion_started", run_id=run_id, source="cordis-eurio", corpus=CORPUS_ID)
-    runtime = build_runtime(settings)
-    try:
-        await runtime.graphiti.build_indices_and_constraints()
-        query_client = HttpSparqlQueryClient()
-        source = EurioEvidenceSource(query_client, corpus_id=CORPUS_ID)
-        documents = await source.fetch_documents(project_iris=PROJECT_IRIS, results_per_project=2)
-        corpus_dir = settings.data_dir / "cordis-eurio" / CORPUS_ID
-        pipeline = IngestionPipeline(
-            episode_sink=GraphitiEvidenceMemory(runtime.graphiti),
-            version_index=JsonVersionIndex(corpus_dir / "versions.json"),
-            archive=FileSourceArchive(corpus_dir / "raw"),
-        )
-        report = await pipeline.ingest(documents)
-        _log(
-            "ingestion_completed",
-            run_id=run_id,
-            received=report.received,
-            ingested=report.ingested,
-            skipped_unchanged=report.skipped_unchanged,
-            duration_ms=round((monotonic() - started) * 1000),
-        )
-        print(json.dumps(asdict(report), indent=2))
-        return 0
-    finally:
-        await runtime.close()
+    report = await ingest_cement_slice(settings)
+    _log(
+        "ingestion_completed",
+        run_id=run_id,
+        source="cordis-eurio",
+        corpus=CORPUS_ID,
+        received=report.received,
+        ingested=report.ingested,
+        skipped_unchanged=report.skipped_unchanged,
+        duration_ms=round((monotonic() - started) * 1000),
+    )
+    print(json.dumps(asdict(report), indent=2))
+    return 0
 
 
-async def _investigate(question: str, as_of_value: str | None, json_output: bool) -> int:
+async def _investigate(
+    question: str,
+    as_of_value: str | None,
+    json_output: bool,
+    *,
+    run_id: str | None = None,
+    started: float | None = None,
+) -> int:
     as_of = _parse_as_of(as_of_value)
-    if as_of is not None:
-        result = unsupported_historical_result(question, as_of)
-        _print_result(result, json_output=json_output)
-        return 2
-
     settings = Settings.from_environment()
-    run_id = str(uuid4())
-    started = monotonic()
+    run_id = run_id or str(uuid4())
+    started = started if started is not None else monotonic()
     _log("investigation_started", run_id=run_id, source="cordis-eurio", corpus=CORPUS_ID)
-    runtime = build_runtime(settings)
-    try:
-        generator = OpenAIBriefGenerator(
-            runtime.openai,
-            model=settings.model,
-            max_output_tokens=settings.model_max_output_tokens,
-        )
-        agent = InvestigationAgent(
-            structural_source=EurioStructuralSource(HttpSparqlQueryClient()),
-            evidence_memory=GraphitiEvidenceMemory(runtime.graphiti),
-            brief_generator=generator,
-            project_iris=PROJECT_IRIS,
-            corpus_id=GROUP_ID,
-            evidence_limit=settings.evidence_limit,
-        )
-        result = await agent.investigate(InvestigationRequest(question=question))
-        _log(
-            "investigation_completed",
-            run_id=run_id,
-            status=result.status,
-            paths=len(result.paths),
-            evidence=len(result.evidence),
-            duration_ms=round((monotonic() - started) * 1000),
-            model_usage=generator.last_usage,
-        )
-        _print_result(result, json_output=json_output)
-        return 0 if result.status == "completed" else 2
-    finally:
-        await runtime.close()
+    result, usage = await investigate_cement_slice(
+        settings, InvestigationRequest(question=question, as_of=as_of)
+    )
+    _log(
+        "investigation_completed",
+        run_id=run_id,
+        source="cordis-eurio",
+        corpus=CORPUS_ID,
+        status=result.status,
+        paths=len(result.paths),
+        evidence=len(result.evidence),
+        duration_ms=round((monotonic() - started) * 1000),
+        model_usage=usage,
+    )
+    _print_result(result, json_output=json_output)
+    return 0 if result.status == "completed" else 2
 
 
 def _print_result(result: InvestigationResult, *, json_output: bool) -> None:

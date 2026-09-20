@@ -6,7 +6,7 @@ from enum import Enum
 from pathlib import Path
 from typing import Protocol
 
-from kg_agentic.models import EvidenceItem, SourceDocument
+from kg_agentic.knowledge.models import EvidenceItem, SourceDocument
 
 
 class EpisodeSink(Protocol):
@@ -136,6 +136,8 @@ class IngestionPipeline:
                 canonical_entity_iris=document.canonical_entity_iris,
                 updated_at=document.update_at,
                 ingested_at=datetime.now(UTC),
+                publication_year=document.publication_year,
+                publication_precision=document.publication_precision,
             )
             await self._archive.save(
                 document=document,

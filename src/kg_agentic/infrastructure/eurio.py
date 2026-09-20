@@ -7,7 +7,7 @@ from typing import Any, Protocol
 import httpx
 import truststore
 
-from kg_agentic.models import EvidenceKind, Relationship, SourceDocument, StructuralPath
+from kg_agentic.knowledge.models import EvidenceKind, Relationship, SourceDocument, StructuralPath
 
 EURIO = "http://data.europa.eu/s66#"
 EURIO_PROJECT_PREFIX = "http://data.europa.eu/s66/resource/projects/"
