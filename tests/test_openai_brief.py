@@ -82,5 +82,7 @@ async def test_openai_brief_uses_structured_output_and_supplied_evidence_ids() -
     assert client.responses.kwargs is not None
     assert client.responses.kwargs["model"] == "gpt-test"
     assert client.responses.kwargs["max_output_tokens"] == 800
+    assert client.responses.kwargs["reasoning"] == {"effort": "minimal"}
+    assert client.responses.kwargs["text"] == {"verbosity": "low"}
     assert client.responses.kwargs["store"] is False
     assert generator.last_usage == {"input_tokens": 100, "output_tokens": 50, "total_tokens": 150}

@@ -62,12 +62,57 @@ EURIO graph content, and it says nothing about a graph database's import/index o
 
 The connected-component definition is deliberately narrower and reproducible: weak components
 over all `eurio:hasInvolvedParty` and `eurio:isRoleOf` IRI edges (project--role--organisation),
-not every EURIO RDF predicate. The paired ignored script pages this query in 10,000-row batches
-and keeps only union-find counters. On 2026-09-20 the public endpoint did not return its first
-ordered page during a six-minute run, so the run was interrupted without a partial count. This is
-an explicit endpoint-performance blocker, not a component measurement. Reproduce it with
-`.venv\Scripts\python.exe .scratch\eda\cement\measure_bounded_structure.py`; a fresh successful
-run is required before using a component or hub-dominance number in a design decision.
+not every EURIO RDF predicate. The paired ignored script pages the endpoint's effective 10,000-row
+cap and keeps only union-find counters. The complete run, observed 2026-09-20 22:45 UTC, returned
+398,702 role edges, 550,357 nodes, and 4,550 components; the largest has 534,379 nodes (97.10%).
+The earlier 399,227 figure is a distinct role-resource count, while this projection counts
+project--role and role--organisation mapping rows. A same-shape aggregate found 398,495 distinct
+roles with an organisation edge: 732 project roles lack `isRoleOf`, while 207 additional rows come
+from roles mapped to more than one organisation (398,495 + 207 = 398,702).
+
+| High-degree organisation IRI | Projection degree |
+| --- | ---: |
+| `http://data.europa.eu/s66/resource/organisations/f2323f9e-d70f-3f3a-93fd-fbb92f715e0e` | 4,334 |
+| `http://data.europa.eu/s66/resource/organisations/2db753f0-6a0d-306b-9920-3e930da32387` | 2,680 |
+| `http://data.europa.eu/s66/resource/organisations/e1b4522f-c7ad-3130-b082-e54ff6052e6d` | 2,057 |
+| `http://data.europa.eu/s66/resource/organisations/fa663da8-847a-3e4a-b7d7-8daae6d401d5` | 1,780 |
+| `http://data.europa.eu/s66/resource/organisations/4fd25cf0-c21e-372c-8f5b-79d225f853bc` | 1,727 |
+
+These are structural degrees, not measures of capability, performance, or relevance. They confirm
+the v1 decision not to expand a seed organisation into its wider portfolio. Reproduce the complete
+measurement with `.venv\Scripts\python.exe .scratch\eda\cement\measure_bounded_structure.py` in
+the local EDA workspace. That implementation is deliberately ignored as required by #3; the
+durable query and acquisition contract are:
+
+| Projection node-degree band | Nodes |
+| --- | ---: |
+| 1 | 85,619 |
+| 2 | 416,663 |
+| 3--9 | 28,080 |
+| 10--99 | 19,457 |
+| 100--999 | 521 |
+| 1,000+ | 17 |
+
+This is a topology-only degree distribution over the measured projection. The role mapping
+accounting is likewise structural: 399,227 distinct project-role resources globally, 398,495 of
+those with an organisation mapping, and 398,702 project-role-organisation rows. No role-label or
+role-category distribution is claimed: that would require a separate semantic schema measurement
+and is not used to admit evidence into this v1 corpus.
+
+```sparql
+PREFIX eurio: <http://data.europa.eu/s66#>
+SELECT ?project ?role ?organisation WHERE {
+  ?project a eurio:Project; eurio:hasInvolvedParty ?role .
+  ?role eurio:isRoleOf ?organisation .
+}
+ORDER BY ?project ?role ?organisation
+LIMIT 10000 OFFSET <0, 10000, 20000, ...>
+```
+
+Request every page through the public endpoint until a page has fewer than 10,000 rows. For each
+row, union `project`--`role` and `role`--`organisation` in an undirected disjoint-set structure;
+component sizes and per-node degrees are then measured from that structure. Retain only counters
+and the final JSON summary. This is the defined role projection, not an RDF-wide component count.
 
 ### First retained corpus
 
@@ -130,7 +175,7 @@ together. Neither was retained locally for this slice.
 | Unmeasured item | Why it is unmeasured | Consequence |
 | --- | --- | --- |
 | Local graph-import footprint | Requires a separately accepted graph import and index measurement. | The 5.856 GB expanded-RDF figure must not be used as a Neo4j storage estimate. |
-| Global connected components | The complete paged public role-edge query did not return its first ordered page during the six-minute bounded run. | We cannot yet quantify disconnected groups or hub dominance; rerun the documented query against a responsive public endpoint or a separately accepted export. |
+| Components across all RDF predicates | The completed measurement intentionally covers only project--role--organisation relationships. | Do not generalize its 4,550 components or 97.10% giant-component share to every EURIO predicate or the result graph. |
 | Separate Graphiti episode and Neo4j index sizes | Neo4j reports the combined store footprint. | The 542 MB figure is an upper bound for the local database layer, not a per-record cost. |
 | Public deliverable text | The official D4.5 URL currently returns HTTP 404 through the application adapter. | Keep it out of the corpus until a retrievable, versioned public source is found. |
 

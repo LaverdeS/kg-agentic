@@ -70,6 +70,8 @@ class OpenAIBriefGenerator:
             input=json.dumps(context, ensure_ascii=False),
             text_format=_BriefOutput,
             max_output_tokens=self._max_output_tokens,
+            reasoning={"effort": "minimal"},
+            text={"verbosity": "low"},
             store=False,
         )
         parsed = response.output_parsed
