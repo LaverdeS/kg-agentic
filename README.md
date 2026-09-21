@@ -94,6 +94,14 @@ constellation beside its cited brief. It is separate from the core investigation
 package and starts with a clearly labelled recorded, current-only snapshot so
 the experience can be inspected without consuming model credit:
 
+> This tool helps a cement producer explore which carbon-capture approaches and
+> partners are worth taking into a site-specific feasibility study. Ask a
+> question, and it connects relevant EU research projects, the organisations
+> involved, their documented outputs, and the underlying public evidence. You
+> can follow each suggested next step back to its source and see where evidence
+> is strong, uncertain, or still missing before committing engineering time or
+> capital.
+
 ```powershell
 npm install
 npm run ui:build
