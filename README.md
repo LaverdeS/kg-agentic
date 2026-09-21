@@ -87,6 +87,25 @@ uv run ruff check .
 uv run pyright
 ```
 
+## Explore the evidence locally
+
+The optional local explorer presents the current cement slice as a 2D evidence
+constellation beside its cited brief. It is separate from the core investigation
+package and starts with a clearly labelled recorded, current-only snapshot so
+the experience can be inspected without consuming model credit:
+
+```powershell
+npm install
+npm run ui:build
+.\.venv\Scripts\python.exe -m local_experience.api.server
+```
+
+Open `http://127.0.0.1:8000`. Select a graph element, cited evidence link, or
+keyboard-accessible scene-index item to inspect its identifiers and provenance.
+The explorer's editable recorded walkthrough changes its run context only; it
+does not present a synthetic fresh recommendation. Its live API route invokes
+the same core use case as the CLI and reports unavailable services explicitly.
+
 The historical command exits non-zero with an explicit unsupported status. The live integration
 test is opt-in because it incurs API calls:
 

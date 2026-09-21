@@ -21,8 +21,8 @@ __pycache__/
 # Node dependencies used by the local Graft harness
 /node_modules/
 /.venv/
-/package.json
-/package-lock.json
+/local_experience/client/dist/
+/local_experience/client/node_modules/
 
 # Local editor and environment files
 /.idea/
