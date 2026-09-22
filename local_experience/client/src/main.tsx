@@ -7,6 +7,7 @@ import "./style.css";
 
 const allKinds = ["project", "organization", "role", "output", "evidence", "entity"];
 const guidedQuestion = "Which CEMCAP evidence should I inspect first?";
+const guidedEvidenceId = "evidence:deliverable:cemcap-d4.5-v1:recorded";
 const guideStorageKey = "kg-agentic-guide-dismissed";
 
 function hasSameGraph(current: Scene, next: Pick<Scene, "nodes" | "edges">) {
@@ -33,6 +34,7 @@ function App() {
     () => window.localStorage.getItem(guideStorageKey) !== "true",
   );
   const threadId = useRef(crypto.randomUUID());
+  const guideButtonRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
     getRecordedScene()
@@ -84,7 +86,7 @@ function App() {
       return next;
     });
   };
-  const run = async (requestedQuestion = question) => {
+  const run = async (requestedQuestion = question, contextId = selectedId) => {
     if (!requestedQuestion.trim()) return;
     setState("running");
     setError(null);
@@ -95,7 +97,7 @@ function App() {
           question: requestedQuestion,
           mode,
           threadId: threadId.current,
-          selectedNodeIds: selectedId ? [selectedId] : [],
+          selectedNodeIds: contextId ? [contextId] : [],
           asOf: mode === "live" && asOf ? asOf : null,
         },
         (trace) => setActivities((current) => [...current, trace]),
@@ -103,8 +105,9 @@ function App() {
           ? current
           : { ...current, ...delta, question: requestedQuestion }),
       );
-      if (nextScene.conversation?.intent === "help") {
+      if (nextScene.conversation?.intent === "help" || nextScene.conversation?.intent === "navigation") {
         setScene((current) => current ? { ...current, conversation: nextScene.conversation } : nextScene);
+        if (nextScene.conversation.navigationTarget) select(nextScene.conversation.navigationTarget);
       } else {
         setScene((current) => current && hasSameGraph(current, nextScene)
           ? { ...current, question: nextScene.question, conversation: nextScene.conversation }
@@ -122,11 +125,13 @@ function App() {
   const dismissGuide = () => {
     window.localStorage.setItem(guideStorageKey, "true");
     setGuideOpen(false);
+    requestAnimationFrame(() => guideButtonRef.current?.focus());
   };
   const startGuidedExample = () => {
     setQuestion(guidedQuestion);
+    setSelectedId(guidedEvidenceId);
     dismissGuide();
-    void run(guidedQuestion);
+    void run(guidedQuestion, guidedEvidenceId);
   };
   const resetThread = async () => {
     try {
@@ -146,7 +151,7 @@ function App() {
     <main>
       <header className="topbar">
         <div><span className="eyebrow">KG / AGENTIC</span><h1>Evidence constellation</h1></div>
-        <button className="quiet guide-button" onClick={() => setGuideOpen(true)}>Guide</button>
+        <button ref={guideButtonRef} className="quiet guide-button" onClick={() => setGuideOpen(true)}>Guide</button>
         <div className="status"><span className="dot" /> {(state === "running" || state === "failed" ? mode : scene.mode) === "recorded" ? "Recorded local snapshot" : asOf ? `Strict historical · ${asOf}` : "Live core run"}</div>
       </header>
       {guideOpen && <Guide onDismiss={dismissGuide} onStart={startGuidedExample} />}
@@ -202,10 +207,33 @@ function App() {
 }
 
 function Guide({ onDismiss, onStart }: { onDismiss: () => void; onStart: () => void }) {
-  return <div className="guide-backdrop"><section className="guide" role="dialog" aria-modal="true" aria-labelledby="guide-title">
+  const dialogRef = useRef<HTMLElement>(null);
+  useEffect(() => dialogRef.current?.focus(), []);
+  const keepFocusInside = (event: React.KeyboardEvent<HTMLElement>) => {
+    if (event.key === "Escape") {
+      event.preventDefault();
+      onDismiss();
+      return;
+    }
+    if (event.key !== "Tab" || !dialogRef.current) return;
+    const focusable = [...dialogRef.current.querySelectorAll<HTMLElement>(
+      "button:not([disabled]), [href], input:not([disabled]), textarea:not([disabled])",
+    )];
+    if (!focusable.length) return;
+    const first = focusable[0];
+    const last = focusable.at(-1);
+    if (event.shiftKey && document.activeElement === first) {
+      event.preventDefault();
+      last?.focus();
+    } else if (!event.shiftKey && document.activeElement === last) {
+      event.preventDefault();
+      first.focus();
+    }
+  };
+  return <div className="guide-backdrop"><section ref={dialogRef} className="guide" role="dialog" aria-modal="true" aria-labelledby="guide-title" tabIndex={-1} onKeyDown={keepFocusInside}>
     <span className="eyebrow">FIRST TWO MINUTES</span><h2 id="guide-title">Quick guide</h2>
     <p>Turn a cement-retrofit question into an auditable recommendation: ask, watch the working graph settle around its support, then inspect the cited source yourself.</p>
-    <ol><li><b>Ask</b> a decision question. The recorded walkthrough is a safe, current-only example.</li><li><b>Trace</b> the public activity and select the amber CEMCAP D4.5 evidence card to focus its neighborhood.</li><li><b>Continue</b> with a follow-up. Your selection guides navigation; it never becomes evidence.</li></ol>
+    <ol><li><b>Ask</b> a decision question. The recorded walkthrough is a safe, current-only example.</li><li><b>Trace</b> the public activity as CEMCAP D4.5 and its immediate neighborhood come into focus.</li><li><b>Continue</b> with a follow-up. Your selection guides navigation; it never becomes evidence.</li></ol>
     <p className="hint">Use <b>Guide</b> in the header whenever you want this orientation again. Ask “What is this app?” for an honest capability summary without searching.</p>
     <div className="guide-actions"><button className="quiet" onClick={onDismiss}>Skip guide for now</button><button className="primary" onClick={onStart}>Start guided example</button></div>
   </section></div>;

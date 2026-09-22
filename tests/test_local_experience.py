@@ -138,6 +138,22 @@ def test_help_question_does_not_run_retrieval_or_change_the_graph() -> None:
     assert "does not query live services" in messages[-1]["content"]
 
 
+def test_navigation_question_focuses_a_known_element_without_retrieval() -> None:
+    retrieved_questions: list[str] = []
+    runner = ConversationRunner(
+        lambda question, mode, as_of: retrieved_questions.append(question) or {},
+        lambda: scene_payload(project_scene(recorded_result(), mode="recorded")),
+    )
+
+    run = runner.run(ConversationRequest("consultant-1", "Focus CEMCAP D4.5", "recorded"))
+
+    assert retrieved_questions == []
+    assert [event for event, _ in run.events] == []
+    conversation = cast(dict[str, object], run.scene["conversation"])
+    assert conversation["intent"] == "navigation"
+    assert conversation["navigationTarget"] == "evidence:deliverable:cemcap-d4.5-v1:recorded"
+
+
 def test_conversation_threads_are_isolated_and_resettable() -> None:
     runner = ConversationRunner(
         lambda question, mode, as_of: {

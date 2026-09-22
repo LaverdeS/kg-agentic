@@ -17,7 +17,8 @@ class ConversationState(TypedDict, total=False):
     mode: Literal["recorded", "live"]
     selected_node_ids: list[str]
     as_of: str | None
-    intent: Literal["investigation", "help"]
+    intent: Literal["investigation", "help", "navigation"]
+    navigation_target: str | None
     scene: dict[str, object]
     history: Annotated[list[dict[str, str]], operator.add]
 
@@ -53,11 +54,12 @@ class ConversationRunner:
         workflow.add_node("retrieve", self._retrieve)
         workflow.add_node("support", self._support)
         workflow.add_node("help", self._help)
+        workflow.add_node("navigate", self._navigate)
         workflow.add_edge(START, "plan")
         workflow.add_conditional_edges(
             "plan",
-            lambda state: cast(Literal["investigation", "help"], state["intent"]),
-            {"investigation": "retrieve", "help": "help"},
+            lambda state: cast(Literal["investigation", "help", "navigation"], state["intent"]),
+            {"investigation": "retrieve", "help": "help", "navigation": "navigate"},
         )
         workflow.add_edge("retrieve", "support")
         self._graph = workflow.compile(checkpointer=self._memory)
@@ -89,7 +91,7 @@ class ConversationRunner:
             for node in cast(list[dict[str, object]], scene["nodes"])
         }
         unknown_selection = set(request.selected_node_ids) - node_ids
-        if unknown_selection:
+        if state["intent"] == "investigation" and unknown_selection:
             raise ValueError(
                 "Selected graph context must refer to an element in this investigation."
             )
@@ -101,15 +103,22 @@ class ConversationRunner:
             "messages": state.get("history", [])[-8:],
             "asOf": request.as_of,
             "intent": state["intent"],
+            "navigationTarget": state.get("navigation_target"),
         }
         return ConversationRun(events=self._events(scene, request), scene=scene)
 
     @staticmethod
     def public_activity(request: ConversationRequest) -> dict[str, str]:
-        if _intent(request.question) == "help":
+        intent = _intent(request.question)
+        if intent == "help":
             return {
                 "action": "oriented",
                 "detail": "Explaining the local explorer without starting retrieval.",
+            }
+        if intent == "navigation":
+            return {
+                "action": "navigated",
+                "detail": "Focusing the requested graph context without retrieval.",
             }
         return {
             "action": "planned",
@@ -132,6 +141,12 @@ class ConversationRunner:
         if intent == "help":
             return {
                 "intent": intent,
+                "history": [{"role": "user", "content": question}],
+            }
+        if intent == "navigation":
+            return {
+                "intent": intent,
+                "navigation_target": _navigation_target(question),
                 "history": [{"role": "user", "content": question}],
             }
         previous_questions = [
@@ -198,11 +213,27 @@ class ConversationRunner:
             ],
         }
 
+    def _navigate(self, state: ConversationState) -> ConversationState:
+        target = cast(str | None, state.get("navigation_target"))
+        summary = (
+            "Focused the CEMCAP D4.5 deliverable and its immediate supporting neighborhood. "
+            "This is navigation only: no evidence was retrieved or added."
+            if target
+            else (
+                "This is navigation only: use the graph search or filters to choose a graph "
+                "element; no evidence was retrieved or added."
+            )
+        )
+        return {
+            "scene": self._snapshot_scene(),
+            "history": [{"role": "assistant", "content": summary}],
+        }
+
     @staticmethod
     def _events(
         scene: dict[str, object], request: ConversationRequest
     ) -> tuple[tuple[str, dict[str, object]], ...]:
-        if scene["conversation"].get("intent") == "help":
+        if scene["conversation"].get("intent") != "investigation":
             return ()
         nodes = cast(list[dict[str, object]], scene["nodes"])
         evidence = cast(list[dict[str, object]], scene["evidence"])
@@ -219,7 +250,7 @@ class ConversationRunner:
         )
 
 
-def _intent(question: str) -> Literal["investigation", "help"]:
+def _intent(question: str) -> Literal["investigation", "help", "navigation"]:
     normalized = question.lower()
     help_markers = (
         "what is this",
@@ -232,4 +263,18 @@ def _intent(question: str) -> Literal["investigation", "help"]:
         "help me",
         "how does this work",
     )
-    return "help" if any(marker in normalized for marker in help_markers) else "investigation"
+    if any(marker in normalized for marker in help_markers):
+        return "help"
+    navigation_markers = ("focus ", "filter ", "zoom ", "show the graph")
+    return (
+        "navigation"
+        if any(marker in normalized for marker in navigation_markers)
+        else "investigation"
+    )
+
+
+def _navigation_target(question: str) -> str | None:
+    normalized = question.lower()
+    if "cemcap" in normalized and ("d4.5" in normalized or "deliverable" in normalized):
+        return "evidence:deliverable:cemcap-d4.5-v1:recorded"
+    return None

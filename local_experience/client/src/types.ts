@@ -74,7 +74,8 @@ export interface Conversation {
   selectedNodeIds: string[];
   messages: ConversationMessage[];
   asOf: string | null;
-  intent?: "investigation" | "help";
+  intent?: "investigation" | "help" | "navigation";
+  navigationTarget?: string | null;
 }
 
 export interface Scene {
