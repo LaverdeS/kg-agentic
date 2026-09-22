@@ -17,6 +17,7 @@ class ConversationState(TypedDict, total=False):
     mode: Literal["recorded", "live"]
     selected_node_ids: list[str]
     as_of: str | None
+    intent: Literal["investigation", "help"]
     scene: dict[str, object]
     history: Annotated[list[dict[str, str]], operator.add]
 
@@ -37,20 +38,27 @@ class ConversationRun:
 
 
 SceneLoader = Callable[[str, Literal["recorded", "live"], str | None], dict[str, object]]
+SceneSnapshot = Callable[[], dict[str, object]]
 
 
 class ConversationRunner:
     """Retain only one local browser thread's public conversation context."""
 
-    def __init__(self, load_scene: SceneLoader) -> None:
+    def __init__(self, load_scene: SceneLoader, snapshot_scene: SceneSnapshot) -> None:
         self._load_scene = load_scene
+        self._snapshot_scene = snapshot_scene
         self._memory = InMemorySaver()
         workflow = StateGraph(ConversationState)
         workflow.add_node("plan", self._plan)
         workflow.add_node("retrieve", self._retrieve)
         workflow.add_node("support", self._support)
+        workflow.add_node("help", self._help)
         workflow.add_edge(START, "plan")
-        workflow.add_edge("plan", "retrieve")
+        workflow.add_conditional_edges(
+            "plan",
+            lambda state: cast(Literal["investigation", "help"], state["intent"]),
+            {"investigation": "retrieve", "help": "help"},
+        )
         workflow.add_edge("retrieve", "support")
         self._graph = workflow.compile(checkpointer=self._memory)
 
@@ -92,8 +100,26 @@ class ConversationRunner:
             "selectedNodeIds": list(request.selected_node_ids),
             "messages": state.get("history", [])[-8:],
             "asOf": request.as_of,
+            "intent": state["intent"],
         }
         return ConversationRun(events=self._events(scene, request), scene=scene)
+
+    @staticmethod
+    def public_activity(request: ConversationRequest) -> dict[str, str]:
+        if _intent(request.question) == "help":
+            return {
+                "action": "oriented",
+                "detail": "Explaining the local explorer without starting retrieval.",
+            }
+        return {
+            "action": "planned",
+            "detail": (
+                f"Using {len(request.selected_node_ids)} selected graph element(s) as navigation "
+                "context."
+                if request.selected_node_ids
+                else "Starting a bounded investigation."
+            ),
+        }
 
     def reset(self, thread_id: str) -> None:
         if not thread_id.strip():
@@ -102,6 +128,12 @@ class ConversationRunner:
 
     def _plan(self, state: ConversationState) -> ConversationState:
         question = cast(str, state.get("question"))
+        intent = _intent(question)
+        if intent == "help":
+            return {
+                "intent": intent,
+                "history": [{"role": "user", "content": question}],
+            }
         previous_questions = [
             message["content"]
             for message in state.get("history", [])
@@ -116,7 +148,11 @@ class ConversationRunner:
             selected = ", ".join(cast(list[str], state.get("selected_node_ids")))
             context.append(f"Selected graph context (not evidence): {selected}")
         query = "\n".join([*context, f"Current question: {question}"])
-        return {"query": query, "history": [{"role": "user", "content": question}]}
+        return {
+            "intent": intent,
+            "query": query,
+            "history": [{"role": "user", "content": question}],
+        }
 
     def _retrieve(self, state: ConversationState) -> ConversationState:
         return {
@@ -142,10 +178,32 @@ class ConversationRunner:
             summary = cast(str, recommendation["text"])
         return {"history": [{"role": "assistant", "content": summary}]}
 
+    def _help(self, state: ConversationState) -> ConversationState:
+        return {
+            "scene": self._snapshot_scene(),
+            "history": [
+                {
+                    "role": "assistant",
+                    "content": (
+                        "This is a local evidence explorer for a cement-retrofit decision. "
+                        "The constellation links the retrieved EURIO organization-project-output "
+                        "paths with source-qualified evidence; the rail keeps cited claims and "
+                        "their provenance inspectable. Recorded mode replays a fixed current "
+                        "snapshot. Live mode can call the configured EURIO, Neo4j, and model "
+                        "services for a bounded investigation, but this help answer does not query "
+                        "live services or change the graph. Select an element to focus its "
+                        "neighborhood, or ask a consulting question when you want new retrieval."
+                    ),
+                }
+            ],
+        }
+
     @staticmethod
     def _events(
         scene: dict[str, object], request: ConversationRequest
     ) -> tuple[tuple[str, dict[str, object]], ...]:
+        if scene["conversation"].get("intent") == "help":
+            return ()
         nodes = cast(list[dict[str, object]], scene["nodes"])
         evidence = cast(list[dict[str, object]], scene["evidence"])
         brief = cast(dict[str, object] | None, scene.get("brief"))
@@ -159,3 +217,19 @@ class ConversationRunner:
             ("activity", {"action": "claim_supported", "count": claim_count}),
             ("graph_delta", {"nodes": nodes, "edges": scene["edges"]}),
         )
+
+
+def _intent(question: str) -> Literal["investigation", "help"]:
+    normalized = question.lower()
+    help_markers = (
+        "what is this",
+        "what is the app",
+        "what can you do",
+        "what tools",
+        "what data",
+        "what sources",
+        "are you connected",
+        "help me",
+        "how does this work",
+    )
+    return "help" if any(marker in normalized for marker in help_markers) else "investigation"

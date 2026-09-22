@@ -96,18 +96,7 @@ class ExplorerHandler(BaseHTTPRequestHandler):
             "run_started",
             {"mode": conversation.mode, "threadId": conversation.thread_id},
         )
-        self._event(
-            "activity",
-            {
-                "action": "planned",
-                "detail": (
-                    f"Using {len(conversation.selected_node_ids)} selected graph element(s) "
-                    "as navigation context."
-                    if conversation.selected_node_ids
-                    else "Starting a bounded investigation."
-                ),
-            },
-        )
+        self._event("activity", CONVERSATIONS.public_activity(conversation))
         try:
             run = CONVERSATIONS.run(conversation)
             for event, payload in run.events:
@@ -266,7 +255,10 @@ def _conversation_request(payload: dict[str, Any]) -> ConversationRequest:
     )
 
 
-CONVERSATIONS = ConversationRunner(_conversation_payload)
+CONVERSATIONS = ConversationRunner(
+    _conversation_payload,
+    lambda: _recorded_payload(),
+)
 
 
 def main() -> None:

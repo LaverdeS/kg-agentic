@@ -6,6 +6,15 @@ import type { Citation, ConversationMessage, Scene, SceneNode, Statement, Trace 
 import "./style.css";
 
 const allKinds = ["project", "organization", "role", "output", "evidence", "entity"];
+const guidedQuestion = "Which CEMCAP evidence should I inspect first?";
+const guideStorageKey = "kg-agentic-guide-dismissed";
+
+function hasSameGraph(current: Scene, next: Pick<Scene, "nodes" | "edges">) {
+  return current.nodes.length === next.nodes.length
+    && current.edges.length === next.edges.length
+    && current.nodes.every((node, index) => node.id === next.nodes[index]?.id)
+    && current.edges.every((edge, index) => edge.id === next.edges[index]?.id);
+}
 
 function App() {
   const [scene, setScene] = useState<Scene | null>(null);
@@ -20,6 +29,9 @@ function App() {
   const [activities, setActivities] = useState<Trace[]>([]);
   const [state, setState] = useState<"loading" | "ready" | "running" | "failed">("loading");
   const [error, setError] = useState<string | null>(null);
+  const [guideOpen, setGuideOpen] = useState(
+    () => window.localStorage.getItem(guideStorageKey) !== "true",
+  );
   const threadId = useRef(crypto.randomUUID());
 
   useEffect(() => {
@@ -72,30 +84,49 @@ function App() {
       return next;
     });
   };
-  const run = async () => {
-    if (!question.trim()) return;
+  const run = async (requestedQuestion = question) => {
+    if (!requestedQuestion.trim()) return;
     setState("running");
     setError(null);
     setActivities([]);
     try {
       const nextScene = await streamConversation(
         {
-          question,
+          question: requestedQuestion,
           mode,
           threadId: threadId.current,
           selectedNodeIds: selectedId ? [selectedId] : [],
           asOf: mode === "live" && asOf ? asOf : null,
         },
         (trace) => setActivities((current) => [...current, trace]),
-        (delta) => setScene((current) => (current ? { ...current, ...delta, question } : current)),
+        (delta) => setScene((current) => !current || hasSameGraph(current, delta)
+          ? current
+          : { ...current, ...delta, question: requestedQuestion }),
       );
-      setScene(nextScene);
-      setVisibleRelationshipTypes(new Set(nextScene.edges.map((edge) => edge.label)));
+      if (nextScene.conversation?.intent === "help") {
+        setScene((current) => current ? { ...current, conversation: nextScene.conversation } : nextScene);
+      } else {
+        setScene((current) => current && hasSameGraph(current, nextScene)
+          ? { ...current, question: nextScene.question, conversation: nextScene.conversation }
+          : nextScene);
+        if (!scene || !hasSameGraph(scene, nextScene)) {
+          setVisibleRelationshipTypes(new Set(nextScene.edges.map((edge) => edge.label)));
+        }
+      }
       setState("ready");
     } catch (nextError) {
       setError(nextError instanceof Error ? nextError.message : "The investigation failed.");
       setState("failed");
     }
+  };
+  const dismissGuide = () => {
+    window.localStorage.setItem(guideStorageKey, "true");
+    setGuideOpen(false);
+  };
+  const startGuidedExample = () => {
+    setQuestion(guidedQuestion);
+    dismissGuide();
+    void run(guidedQuestion);
   };
   const resetThread = async () => {
     try {
@@ -115,8 +146,10 @@ function App() {
     <main>
       <header className="topbar">
         <div><span className="eyebrow">KG / AGENTIC</span><h1>Evidence constellation</h1></div>
+        <button className="quiet guide-button" onClick={() => setGuideOpen(true)}>Guide</button>
         <div className="status"><span className="dot" /> {(state === "running" || state === "failed" ? mode : scene.mode) === "recorded" ? "Recorded local snapshot" : asOf ? `Strict historical · ${asOf}` : "Live core run"}</div>
       </header>
+      {guideOpen && <Guide onDismiss={dismissGuide} onStart={startGuidedExample} />}
       <section className="workspace" aria-label="Investigation workspace">
         <div className="graph-region">
           <div className="graph-header">
@@ -148,7 +181,7 @@ function App() {
             <fieldset className="mode-group"><legend>Investigation mode</legend><label className="mode"><input type="radio" name="mode" checked={mode === "recorded"} onChange={() => setMode("recorded")} /> Recorded walkthrough</label>
             <label className="mode"><input type="radio" name="mode" checked={mode === "live"} onChange={() => setMode("live")} /> Live core run</label></fieldset>
             <label className="as-of" htmlFor="as-of">Strict historical cutoff<input id="as-of" type="date" value={asOf} disabled={mode === "recorded"} onChange={(event) => setAsOf(event.target.value)} /></label>
-            <button className="primary" disabled={state === "running"} onClick={run}>{state === "running" ? "Investigating…" : mode === "live" ? "Ask live investigation" : "Ask recorded walkthrough"}</button>
+            <button className="primary" disabled={state === "running"} onClick={() => void run()}>{state === "running" ? "Investigating…" : mode === "live" ? "Ask live investigation" : "Ask recorded walkthrough"}</button>
             <button className="quiet reset-thread" onClick={resetThread}>Reset conversation</button>
             <p className="hint">A selected graph element is supplied as navigation context, never as evidence. Recorded mode replays a labelled current snapshot. Live historical mode uses only cutoff-eligible evidence and reports unavailable services honestly.</p>
           </section>
@@ -166,6 +199,16 @@ function App() {
       </section>
     </main>
   );
+}
+
+function Guide({ onDismiss, onStart }: { onDismiss: () => void; onStart: () => void }) {
+  return <div className="guide-backdrop"><section className="guide" role="dialog" aria-modal="true" aria-labelledby="guide-title">
+    <span className="eyebrow">FIRST TWO MINUTES</span><h2 id="guide-title">Quick guide</h2>
+    <p>Turn a cement-retrofit question into an auditable recommendation: ask, watch the working graph settle around its support, then inspect the cited source yourself.</p>
+    <ol><li><b>Ask</b> a decision question. The recorded walkthrough is a safe, current-only example.</li><li><b>Trace</b> the public activity and select the amber CEMCAP D4.5 evidence card to focus its neighborhood.</li><li><b>Continue</b> with a follow-up. Your selection guides navigation; it never becomes evidence.</li></ol>
+    <p className="hint">Use <b>Guide</b> in the header whenever you want this orientation again. Ask “What is this app?” for an honest capability summary without searching.</p>
+    <div className="guide-actions"><button className="quiet" onClick={onDismiss}>Skip guide for now</button><button className="primary" onClick={onStart}>Start guided example</button></div>
+  </section></div>;
 }
 
 function ConversationPanel({ messages }: { messages: ConversationMessage[] }) {

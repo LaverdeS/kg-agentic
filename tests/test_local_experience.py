@@ -119,12 +119,32 @@ def test_recorded_conversation_rejects_a_historical_cutoff() -> None:
     assert payload == {"error": "An asOf date requires a live investigation."}
 
 
+def test_help_question_does_not_run_retrieval_or_change_the_graph() -> None:
+    retrieved_questions: list[str] = []
+    runner = ConversationRunner(
+        lambda question, mode, as_of: retrieved_questions.append(question) or {},
+        lambda: scene_payload(project_scene(recorded_result(), mode="recorded")),
+    )
+
+    run = runner.run(
+        ConversationRequest("consultant-1", "What is this app and what data can it use?", "live")
+    )
+
+    assert retrieved_questions == []
+    assert [event for event, _ in run.events] == []
+    conversation = cast(dict[str, object], run.scene["conversation"])
+    assert conversation["intent"] == "help"
+    messages = cast(list[dict[str, str]], conversation["messages"])
+    assert "does not query live services" in messages[-1]["content"]
+
+
 def test_conversation_threads_are_isolated_and_resettable() -> None:
     runner = ConversationRunner(
         lambda question, mode, as_of: {
             **scene_payload(project_scene(recorded_result(), mode=mode)),
             "question": question,
-        }
+        },
+        lambda: scene_payload(project_scene(recorded_result(), mode="recorded")),
     )
 
     first = runner.run(ConversationRequest("one", "What should I inspect?", "recorded"))

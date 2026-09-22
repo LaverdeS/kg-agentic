@@ -17,6 +17,14 @@ current-only recorded snapshot of the cement slice, for inspecting interaction
 and citation behavior without an API call. Editing its question changes the run
 context only; it does not claim to generate a new answer.
 
+On a first visit, the optional **Quick guide** introduces the intended two-minute
+journey: start a recorded question, follow the public activity, inspect the
+amber CEMCAP D4.5 citation, then ask a follow-up. It can be dismissed and
+reopened from **Guide** in the header. Questions about the app's purpose,
+capabilities, connected data, or sources receive an honest orientation response
+without invoking retrieval or changing the graph; ask a consulting question to
+start a bounded investigation.
+
 `POST /api/conversations` accepts a `threadId`, question, mode, optional
 `selectedNodeIds`, and (for live mode only) an ISO `asOf` cutoff. It runs a
 small LangGraph workflow with process-local, thread-scoped checkpoints, calls
@@ -60,4 +68,5 @@ npm run ui:test
 ```
 
 It checks the conversation/public-activity flow, CEMCAP D4.5 inspection,
-reduced-motion preference, and the keyboard-accessible evidence/detail surface.
+reduced-motion preference, first-use guide, intent-aware capability response,
+and the keyboard-accessible evidence/detail surface.
