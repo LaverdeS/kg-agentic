@@ -105,7 +105,9 @@ function App() {
           ? current
           : { ...current, ...delta, question: requestedQuestion }),
       );
-      if (nextScene.conversation?.intent === "help" || nextScene.conversation?.intent === "navigation") {
+      if (nextScene.conversation?.intent === "help"
+        || nextScene.conversation?.intent === "navigation"
+        || nextScene.conversation?.intent === "conversation") {
         setScene((current) => current ? { ...current, conversation: nextScene.conversation } : nextScene);
         if (nextScene.conversation.navigationTarget) select(nextScene.conversation.navigationTarget);
       } else {
@@ -150,7 +152,7 @@ function App() {
   return (
     <main>
       <header className="topbar">
-        <div><span className="eyebrow">KG / AGENTIC</span><h1>Evidence constellation</h1></div>
+        <div><span className="eyebrow">KG / AGENTIC</span><h1>Evidence navigator</h1><p className="product-line">Make a cement-retrofit decision you can inspect.</p></div>
         <button ref={guideButtonRef} className="quiet guide-button" onClick={() => setGuideOpen(true)}>Guide</button>
         <div className="status"><span className="dot" /> {(state === "running" || state === "failed" ? mode : scene.mode) === "recorded" ? "Recorded local snapshot" : asOf ? `Strict historical · ${asOf}` : "Live core run"}</div>
       </header>
@@ -180,15 +182,18 @@ function App() {
         </div>
         <aside className="rail">
           <section className="prompt-card">
-            <span className="eyebrow">CONVERSATION</span>
-            <label htmlFor="question">Consulting question</label>
-            <textarea id="question" value={question} onChange={(event) => setQuestion(event.target.value)} rows={3} />
-            <fieldset className="mode-group"><legend>Investigation mode</legend><label className="mode"><input type="radio" name="mode" checked={mode === "recorded"} onChange={() => setMode("recorded")} /> Recorded walkthrough</label>
+            <span className="eyebrow">START HERE</span><h2>Ask, orient, or explore</h2>
+            <p className="prompt-intro">Use this workspace to connect a decision to its supporting research. I’ll tell you when I’m chatting, navigating, or retrieving evidence.</p>
+            <label htmlFor="question">Message the explorer</label>
+            <textarea id="question" value={question} onChange={(event) => setQuestion(event.target.value)} rows={3} placeholder="Try “What should I inspect first?” or simply say hello." />
+            <div className="prompt-suggestions" aria-label="Suggested messages"><button onClick={() => setQuestion("What is this app?")}>What is this?</button><button onClick={() => setQuestion("Focus CEMCAP D4.5")}>Focus key evidence</button><button onClick={() => setQuestion("Hello there")}>Say hello</button></div>
+            <details className="run-settings"><summary>Evidence run settings</summary><fieldset className="mode-group"><legend>Investigation mode</legend><label className="mode"><input type="radio" name="mode" checked={mode === "recorded"} onChange={() => setMode("recorded")} /> Recorded walkthrough</label>
             <label className="mode"><input type="radio" name="mode" checked={mode === "live"} onChange={() => setMode("live")} /> Live core run</label></fieldset>
-            <label className="as-of" htmlFor="as-of">Strict historical cutoff<input id="as-of" type="date" value={asOf} disabled={mode === "recorded"} onChange={(event) => setAsOf(event.target.value)} /></label>
-            <button className="primary" disabled={state === "running"} onClick={() => void run()}>{state === "running" ? "Investigating…" : mode === "live" ? "Ask live investigation" : "Ask recorded walkthrough"}</button>
+            <label className="as-of" htmlFor="as-of">Strict historical cutoff<input id="as-of" type="date" value={asOf} disabled={mode === "recorded"} onChange={(event) => setAsOf(event.target.value)} /></label></details>
+            <button className="primary" disabled={state === "running"} onClick={() => void run()}>{state === "running" ? "Working…" : "Send message"}</button>
+            <p className="intent-hint">Decision questions retrieve evidence. Everyday chat and orientation stay in this local thread; graph requests only navigate what is already visible.</p>
             <button className="quiet reset-thread" onClick={resetThread}>Reset conversation</button>
-            <p className="hint">A selected graph element is supplied as navigation context, never as evidence. Recorded mode replays a labelled current snapshot. Live historical mode uses only cutoff-eligible evidence and reports unavailable services honestly.</p>
+            <p className="hint">Selection guides navigation, never evidence. Recorded mode replays a labelled current snapshot; live historical mode uses only cutoff-eligible evidence.</p>
           </section>
           <ConversationPanel messages={messages} />
           <section className="activity-card" aria-live="polite"><span className="eyebrow">PUBLIC ACTIVITY</span>
@@ -240,7 +245,7 @@ function Guide({ onDismiss, onStart }: { onDismiss: () => void; onStart: () => v
 }
 
 function ConversationPanel({ messages }: { messages: ConversationMessage[] }) {
-  return <section className="conversation"><span className="eyebrow">THREAD MEMORY</span>{messages.length === 0 ? <p className="hint">Ask a question to start this local, in-memory thread.</p> : messages.map((message, index) => <article key={`${message.role}-${index}`} className={message.role}><b>{message.role === "user" ? "You" : "Investigation"}</b><p>{message.content}</p></article>)}</section>;
+  return <section className="conversation"><span className="eyebrow">LOCAL CONVERSATION</span>{messages.length === 0 ? <p className="hint">Start naturally: say hello, ask what this workspace does, focus a source, or ask a decision question.</p> : messages.map((message, index) => <article key={`${message.role}-${index}`} className={message.role}><b>{message.role === "user" ? "You" : "Guide"}</b><p>{message.content}</p></article>)}</section>;
 }
 
 function BriefPanel({ brief, onCitation }: { brief: NonNullable<Scene["brief"]>; onCitation: (citation: Citation) => void }) {

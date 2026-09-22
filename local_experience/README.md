@@ -17,13 +17,16 @@ current-only recorded snapshot of the cement slice, for inspecting interaction
 and citation behavior without an API call. Editing its question changes the run
 context only; it does not claim to generate a new answer.
 
-On a first visit, the optional **Quick guide** introduces the intended two-minute
-journey: start a recorded question, follow the public activity, inspect the
-amber CEMCAP D4.5 citation, then ask a follow-up. It can be dismissed and
-reopened from **Guide** in the header. Questions about the app's purpose,
-capabilities, connected data, or sources receive an honest orientation response
-without invoking retrieval or changing the graph; ask a consulting question to
-start a bounded investigation.
+The first-use rail makes the purpose and next action clear without requiring
+the optional **Quick guide**: users can chat, ask for orientation, focus a
+visible source, or start an evidence investigation. The guide still introduces
+the intended two-minute journey—start a recorded question, follow the public
+activity, inspect the amber CEMCAP D4.5 citation, then ask a follow-up—and can
+be dismissed or reopened from **Guide** in the header. Ordinary casual turns
+(such as “Hello” or “Thanks”), app/capability questions, and graph-navigation
+requests receive a clear local response without invoking retrieval or changing
+the graph. The public activity trace distinguishes this conversation or
+navigation from a bounded investigation.
 
 `POST /api/conversations` accepts a `threadId`, question, mode, optional
 `selectedNodeIds`, and (for live mode only) an ISO `asOf` cutoff. It runs a
@@ -67,6 +70,7 @@ recorded journey with:
 npm run ui:test
 ```
 
-It checks the conversation/public-activity flow, CEMCAP D4.5 inspection,
-reduced-motion preference, first-use guide, intent-aware capability response,
-and the keyboard-accessible evidence/detail surface.
+It checks the conversation/public-activity flow, ordinary no-retrieval chat,
+CEMCAP D4.5 inspection, reduced-motion preference, first-use guide,
+intent-aware capability response, and the keyboard-accessible evidence/detail
+surface.

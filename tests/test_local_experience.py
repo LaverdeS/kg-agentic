@@ -135,7 +135,33 @@ def test_help_question_does_not_run_retrieval_or_change_the_graph() -> None:
     conversation = cast(dict[str, object], run.scene["conversation"])
     assert conversation["intent"] == "help"
     messages = cast(list[dict[str, str]], conversation["messages"])
-    assert "does not query live services" in messages[-1]["content"]
+    assert "does not search or change the graph" in messages[-1]["content"]
+
+
+def test_casual_turn_stays_in_the_local_conversation_without_retrieval() -> None:
+    retrieved_questions: list[str] = []
+    runner = ConversationRunner(
+        lambda question, mode, as_of: retrieved_questions.append(question) or {},
+        lambda: scene_payload(project_scene(recorded_result(), mode="recorded")),
+    )
+
+    run = runner.run(ConversationRequest("consultant-1", "Hello there", "recorded"))
+
+    assert retrieved_questions == []
+    assert [event for event, _ in run.events] == []
+    conversation = cast(dict[str, object], run.scene["conversation"])
+    assert conversation["intent"] == "conversation"
+    messages = cast(list[dict[str, str]], conversation["messages"])
+    assert "No evidence retrieval has started" in messages[-1]["content"]
+
+    thanks = runner.run(ConversationRequest("consultant-1", "Thanks, that helps.", "recorded"))
+    recap = runner.run(ConversationRequest("consultant-1", "Can you recap?", "recorded"))
+
+    assert retrieved_questions == []
+    assert cast(dict[str, object], thanks.scene["conversation"])["intent"] == "conversation"
+    recap_conversation = cast(dict[str, object], recap.scene["conversation"])
+    recap_messages = cast(list[dict[str, str]], recap_conversation["messages"])
+    assert "Thanks, that helps." in recap_messages[-1]["content"]
 
 
 def test_navigation_question_focuses_a_known_element_without_retrieval() -> None:

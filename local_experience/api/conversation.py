@@ -17,7 +17,7 @@ class ConversationState(TypedDict, total=False):
     mode: Literal["recorded", "live"]
     selected_node_ids: list[str]
     as_of: str | None
-    intent: Literal["investigation", "help", "navigation"]
+    intent: Literal["investigation", "help", "navigation", "conversation"]
     navigation_target: str | None
     scene: dict[str, object]
     history: Annotated[list[dict[str, str]], operator.add]
@@ -55,11 +55,19 @@ class ConversationRunner:
         workflow.add_node("support", self._support)
         workflow.add_node("help", self._help)
         workflow.add_node("navigate", self._navigate)
+        workflow.add_node("converse", self._converse)
         workflow.add_edge(START, "plan")
         workflow.add_conditional_edges(
             "plan",
-            lambda state: cast(Literal["investigation", "help", "navigation"], state["intent"]),
-            {"investigation": "retrieve", "help": "help", "navigation": "navigate"},
+            lambda state: cast(
+                Literal["investigation", "help", "navigation", "conversation"], state["intent"]
+            ),
+            {
+                "investigation": "retrieve",
+                "help": "help",
+                "navigation": "navigate",
+                "conversation": "converse",
+            },
         )
         workflow.add_edge("retrieve", "support")
         self._graph = workflow.compile(checkpointer=self._memory)
@@ -86,12 +94,15 @@ class ConversationRunner:
             ),
         )
         scene = dict(cast(dict[str, object], state.get("scene")))
+        intent = cast(
+            Literal["investigation", "help", "navigation", "conversation"], state.get("intent")
+        )
         node_ids = {
             cast(str, node["id"])
             for node in cast(list[dict[str, object]], scene["nodes"])
         }
         unknown_selection = set(request.selected_node_ids) - node_ids
-        if state["intent"] == "investigation" and unknown_selection:
+        if intent == "investigation" and unknown_selection:
             raise ValueError(
                 "Selected graph context must refer to an element in this investigation."
             )
@@ -102,7 +113,7 @@ class ConversationRunner:
             "selectedNodeIds": list(request.selected_node_ids),
             "messages": state.get("history", [])[-8:],
             "asOf": request.as_of,
-            "intent": state["intent"],
+            "intent": intent,
             "navigationTarget": state.get("navigation_target"),
         }
         return ConversationRun(events=self._events(scene, request), scene=scene)
@@ -119,6 +130,11 @@ class ConversationRunner:
             return {
                 "action": "navigated",
                 "detail": "Focusing the requested graph context without retrieval.",
+            }
+        if intent == "conversation":
+            return {
+                "action": "conversed",
+                "detail": "Staying in the local conversation; no evidence retrieval started.",
             }
         return {
             "action": "planned",
@@ -138,7 +154,7 @@ class ConversationRunner:
     def _plan(self, state: ConversationState) -> ConversationState:
         question = cast(str, state.get("question"))
         intent = _intent(question)
-        if intent == "help":
+        if intent in {"help", "conversation"}:
             return {
                 "intent": intent,
                 "history": [{"role": "user", "content": question}],
@@ -200,14 +216,13 @@ class ConversationRunner:
                 {
                     "role": "assistant",
                     "content": (
-                        "This is a local evidence explorer for a cement-retrofit decision. "
-                        "The constellation links the retrieved EURIO organization-project-output "
-                        "paths with source-qualified evidence; the rail keeps cited claims and "
-                        "their provenance inspectable. Recorded mode replays a fixed current "
-                        "snapshot. Live mode can call the configured EURIO, Neo4j, and model "
-                        "services for a bounded investigation, but this help answer does not query "
-                        "live services or change the graph. Select an element to focus its "
-                        "neighborhood, or ask a consulting question when you want new retrieval."
+                        "This workspace helps you examine the research behind a cement-retrofit "
+                        "decision. The graph shows the projects and sources in the current "
+                        "working set; this rail lets you inspect the evidence behind a claim. "
+                        "Recorded mode replays a fixed current snapshot. Live mode can run a "
+                        "bounded investigation against configured services. This answer does "
+                        "not search or change the graph. "
+                        "Ask a decision question for evidence, or select an element to focus it."
                     ),
                 }
             ],
@@ -229,11 +244,52 @@ class ConversationRunner:
             "history": [{"role": "assistant", "content": summary}],
         }
 
+    def _converse(self, state: ConversationState) -> ConversationState:
+        question = cast(str, state.get("question"))
+        normalized = question.lower().strip(" !?.")
+        if "recap" in normalized or "what did we discuss" in normalized:
+            prior_questions = [
+                message["content"]
+                for message in state.get("history", [])
+                if message["role"] == "user" and message["content"] != question
+            ]
+            response = (
+                f"So far, you asked: {prior_questions[-1]}. I can keep chatting, focus a visible "
+                "source, or start an evidence investigation when you are ready. "
+                "No evidence retrieval has started."
+                if prior_questions
+                else "We have not explored a question yet. I can chat, orient you, focus a visible "
+                "source, or start an evidence investigation. No evidence retrieval has started."
+            )
+        elif normalized.startswith(("thanks", "thank you", "cheers")):
+            response = (
+                "You’re welcome. When you’re ready, I can explain the workspace, focus a graph "
+                "element, or start a bounded evidence investigation. "
+                "No evidence retrieval has started."
+            )
+        elif normalized in {"how are you", "how are things"}:
+            response = (
+                "I’m ready to help you inspect this local evidence workspace. I can chat, orient "
+                "you, navigate the visible graph, or retrieve evidence when you ask a decision "
+                "question. No evidence retrieval has started."
+            )
+        else:
+            response = (
+                "Hello — I’m your local evidence-exploration guide. We can talk through the "
+                "workspace, focus a visible source, or investigate a cement-retrofit decision. "
+                "No evidence retrieval has started."
+            )
+        return {
+            "scene": self._snapshot_scene(),
+            "history": [{"role": "assistant", "content": response}],
+        }
+
     @staticmethod
     def _events(
         scene: dict[str, object], request: ConversationRequest
     ) -> tuple[tuple[str, dict[str, object]], ...]:
-        if scene["conversation"].get("intent") != "investigation":
+        conversation = cast(dict[str, object], scene["conversation"])
+        if conversation.get("intent") != "investigation":
             return ()
         nodes = cast(list[dict[str, object]], scene["nodes"])
         evidence = cast(list[dict[str, object]], scene["evidence"])
@@ -250,8 +306,8 @@ class ConversationRunner:
         )
 
 
-def _intent(question: str) -> Literal["investigation", "help", "navigation"]:
-    normalized = question.lower()
+def _intent(question: str) -> Literal["investigation", "help", "navigation", "conversation"]:
+    normalized = " ".join(question.lower().split())
     help_markers = (
         "what is this",
         "what is the app",
@@ -262,15 +318,35 @@ def _intent(question: str) -> Literal["investigation", "help", "navigation"]:
         "are you connected",
         "help me",
         "how does this work",
+        "who are you",
+        "how do i use this",
     )
     if any(marker in normalized for marker in help_markers):
         return "help"
     navigation_markers = ("focus ", "filter ", "zoom ", "show the graph")
-    return (
-        "navigation"
-        if any(marker in normalized for marker in navigation_markers)
-        else "investigation"
+    if any(marker in normalized for marker in navigation_markers):
+        return "navigation"
+    casual_turns = {"how are you", "how are things", "great", "nice", "sounds good"}
+    casual_starts = (
+        "hello",
+        "hey",
+        "good morning",
+        "good afternoon",
+        "good evening",
+        "thanks",
+        "thank you",
+        "cheers",
     )
+    if "recap" in normalized or "what did we discuss" in normalized:
+        return "conversation"
+    if normalized.strip(" !?.") in casual_turns:
+        return "conversation"
+    greeting = normalized.startswith(casual_starts) or normalized in {"hi", "hi!", "hi."}
+    greeting = greeting or normalized.startswith(("hi ", "hi,", "hi!"))
+    request_markers = ("can you", "could you", "please", "investigate", "find evidence")
+    if greeting and not any(marker in normalized for marker in request_markers):
+        return "conversation"
+    return "investigation"
 
 
 def _navigation_target(question: str) -> str | None:
