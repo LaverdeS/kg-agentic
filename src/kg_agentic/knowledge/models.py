@@ -24,6 +24,7 @@ class Relationship:
     object: str
     source_url: str
     attributes: tuple[tuple[str, str], ...] = ()
+    available_at: datetime | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -144,10 +145,21 @@ class TraceStep:
 
 @dataclass(frozen=True, slots=True)
 class InvestigationResult:
-    status: Literal["completed", "abstained", "unsupported_historical_request"]
+    status: Literal["completed", "abstained"]
     plan: InvestigationPlan
     trace: tuple[TraceStep, ...]
     paths: tuple[StructuralPath, ...]
     evidence: tuple[EvidenceItem, ...]
     brief: RecommendationBrief | None
     gaps: tuple[str, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class InvestigationComparison:
+    earlier_as_of: datetime
+    earlier: InvestigationResult
+    later_as_of: datetime
+    later: InvestigationResult
+    later_only_retrieved_evidence: tuple[EvidenceItem, ...]
+    no_longer_retrieved_evidence: tuple[EvidenceItem, ...]
+    changes: tuple[str, ...]

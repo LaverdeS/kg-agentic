@@ -43,15 +43,20 @@ structured brief. A support gate removes every material generated claim that can
 retrieved evidence with an HTTP citation. If paths, evidence, or supported claims are missing, the
 agent abstains instead of manufacturing an answer.
 
-This is deliberately a current-evidence slice. Historical `--as-of` requests are rejected before
-retrieval because reliable publication-time eligibility is not yet available for all selected
-CORDIS records. The seed corpus is also intentionally small: three project records and at most two
-result records per project for CEMCAP (`641185`), LEILAC2 (`884170`), and HERCCULES (`101096691`),
-plus reviewed passages from a versioned public CEMCAP D4.5 deliverable and a CEMCAP-linked
-publication. This demonstrates all four source categories while retaining result metadata as
-distinct from full-text evidence. D4.5 supports a technical retrofitability comparison, not an
-economic ranking or supplier qualification; project participation likewise identifies candidates
-for validation rather than proved capabilities.
+The slice supports strict historical cutoffs as well as current investigation. A historical brief
+admits only source versions demonstrably public by its cutoff; event, retrieval, ingestion, and
+Graphiti timestamps are not substitutes for public availability. Historical retrieval uses a
+durable source-version catalog rather than querying the current Graphiti graph, so later graph
+state cannot rank or expand its evidence. The live EURIO endpoint does not currently expose dated
+source versions for its relationship triples, so historical briefs omit those paths rather than
+presenting current relationships as past knowledge. A resulting source-only brief says so
+explicitly. The seed corpus is intentionally small: three project
+records and at most two result records per project for CEMCAP (`641185`), LEILAC2 (`884170`), and
+HERCCULES (`101096691`), plus reviewed passages from a versioned public CEMCAP D4.5 deliverable
+and a CEMCAP-linked publication. This demonstrates all four source categories while retaining
+result metadata as distinct from full-text evidence. D4.5 supports a technical retrofitability
+comparison, not an economic ranking or supplier qualification; project participation likewise
+identifies candidates for validation rather than proved capabilities.
 
 ## Run locally
 
@@ -67,7 +72,7 @@ Fill `OPENAI_API_KEY` and `NEO4J_PASSWORD` in the ignored `.env` file yourself. 
 file. The remaining settings have runnable local defaults; `.env.example` documents the model,
 embedding, concurrency, evidence-limit, and data-directory overrides.
 
-Start Neo4j, ingest the bounded corpus once, and run the current investigation:
+Start Neo4j, ingest the bounded corpus once, and run an investigation:
 
 ```powershell
 docker compose up -d neo4j
@@ -83,7 +88,8 @@ Useful checks and alternate output are:
 
 ```powershell
 uv run kg-agentic investigate --json
-uv run kg-agentic investigate --as-of 2025-01-01
+uv run kg-agentic investigate --as-of 2019-01-01
+uv run kg-agentic compare --from 2019-01-01 --to 2020-01-01
 uv run kg-agentic evaluate
 uv run pytest
 uv run ruff check .
@@ -117,8 +123,11 @@ The explorer's editable recorded walkthrough changes its run context only; it
 does not present a synthetic fresh recommendation. Its live API route invokes
 the same core use case as the CLI and reports unavailable services explicitly.
 
-The historical command exits non-zero with an explicit unsupported status. The live integration
-test is opt-in because it incurs API calls:
+The comparison command reports source-qualified evidence versions retrieved only at one cutoff;
+it explicitly does not treat a retrieval/ranking difference as newly eligible evidence or a
+real-world change. Year-only publication dates are eligible only after that calendar year has
+ended; unknown dates never support a strict historical claim. The live integration test is opt-in
+because it incurs API calls:
 
 ```powershell
 $env:RUN_LIVE = "1"
@@ -129,7 +138,11 @@ uv run pytest tests/test_live_stack.py -q
 
 A brief should distinguish source-backed facts, source-reported claims, model extractions, and agent hypotheses. Each supported claim should lead back to an identifiable source and the relevant passage or relationship.
 
-Dates matter: when something happened, when its evidence became public, and when it was ingested answer different questions. Historical recommendations should rely on evidence demonstrably available at the requested time. Missing or conflicting support should narrow the conclusion and guide further investigation.
+Dates matter: when something happened, when its evidence became public, and when it was ingested
+answer different questions. Historical recommendations rely only on evidence demonstrably
+available at the requested time, and the citation gate repeats that check after generation.
+Changed source versions remain separate, traceable evidence rather than overwriting their earlier
+versions. Missing or conflicting support narrows the conclusion and guides further investigation.
 
 This discipline makes uncertainty actionable. Participation in a project alone does not establish a capability; a missing public record alone does not establish its absence.
 

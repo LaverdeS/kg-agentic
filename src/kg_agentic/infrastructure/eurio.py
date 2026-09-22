@@ -59,7 +59,13 @@ class EurioStructuralSource:
         self._query_client = query_client
         self._source_url = source_url
 
-    async def find_paths(self, *, project_iris: tuple[str, ...]) -> tuple[StructuralPath, ...]:
+    async def find_paths(
+        self, *, project_iris: tuple[str, ...], as_of: datetime | None = None
+    ) -> tuple[StructuralPath, ...]:
+        if as_of is not None:
+            # The live endpoint has no source-version availability timestamps. Returning no paths
+            # is safer than treating current triples as historical knowledge.
+            return ()
         values = _project_values(project_iris)
         roles_response = await self._query_client.query(_roles_query(values))
         results_response = await self._query_client.query(_results_query(values))

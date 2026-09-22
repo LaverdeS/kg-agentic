@@ -12,9 +12,18 @@ from uuid import uuid4
 from dotenv import load_dotenv
 
 from kg_agentic.application.cement import CORPUS_ID, CURRENT_QUESTION
-from kg_agentic.infrastructure.bootstrap import ingest_cement_slice, investigate_cement_slice
+from kg_agentic.infrastructure.bootstrap import (
+    compare_cement_slice,
+    ingest_cement_slice,
+    investigate_cement_slice,
+)
 from kg_agentic.infrastructure.runtime import Settings
-from kg_agentic.knowledge.models import InvestigationRequest, InvestigationResult, SupportedClaim
+from kg_agentic.knowledge.models import (
+    InvestigationComparison,
+    InvestigationRequest,
+    InvestigationResult,
+    SupportedClaim,
+)
 
 
 def main() -> None:
@@ -47,6 +56,15 @@ async def _dispatch(args: argparse.Namespace, *, run_id: str, started: float) ->
         return await _investigate(
             args.question,
             args.as_of,
+            args.json,
+            run_id=run_id,
+            started=started,
+        )
+    if args.command == "compare":
+        return await _compare(
+            args.question,
+            args.earlier_as_of,
+            args.later_as_of,
             args.json,
             run_id=run_id,
             started=started,
@@ -109,6 +127,44 @@ async def _investigate(
     return 0 if result.status == "completed" else 2
 
 
+async def _compare(
+    question: str,
+    earlier_as_of_value: str,
+    later_as_of_value: str,
+    json_output: bool,
+    *,
+    run_id: str | None = None,
+    started: float | None = None,
+) -> int:
+    earlier_as_of = _parse_as_of(earlier_as_of_value)
+    later_as_of = _parse_as_of(later_as_of_value)
+    assert earlier_as_of is not None
+    assert later_as_of is not None
+    settings = Settings.from_environment()
+    run_id = run_id or str(uuid4())
+    started = started if started is not None else monotonic()
+    _log("comparison_started", run_id=run_id, source="cordis-eurio", corpus=CORPUS_ID)
+    comparison, usage = await compare_cement_slice(
+        settings,
+        question=question,
+        earlier_as_of=earlier_as_of,
+        later_as_of=later_as_of,
+    )
+    _log(
+        "comparison_completed",
+        run_id=run_id,
+        source="cordis-eurio",
+        corpus=CORPUS_ID,
+        earlier_status=comparison.earlier.status,
+        later_status=comparison.later.status,
+        later_only_retrieved_evidence=len(comparison.later_only_retrieved_evidence),
+        duration_ms=round((monotonic() - started) * 1000),
+        model_usage=usage,
+    )
+    _print_comparison(comparison, json_output=json_output)
+    return 0 if comparison.earlier.status == comparison.later.status == "completed" else 2
+
+
 def _print_result(result: InvestigationResult, *, json_output: bool) -> None:
     if json_output:
         print(json.dumps(asdict(result), default=_json_default, indent=2))
@@ -134,6 +190,20 @@ def _print_result(result: InvestigationResult, *, json_output: bool) -> None:
         print("\n## Gaps\n")
         for gap in result.gaps:
             print(f"- {gap}")
+
+
+def _print_comparison(comparison: InvestigationComparison, *, json_output: bool) -> None:
+    if json_output:
+        print(json.dumps(asdict(comparison), default=_json_default, indent=2))
+        return
+    print(
+        f"# Evidence change: {comparison.earlier_as_of.isoformat()} to "
+        f"{comparison.later_as_of.isoformat()}\n"
+    )
+    for change in comparison.changes:
+        print(f"- {change}")
+    print(f"\nEarlier status: {comparison.earlier.status}")
+    print(f"Later status: {comparison.later.status}")
 
 
 def _format_statement(statement: SupportedClaim) -> str:
@@ -169,9 +239,18 @@ def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="kg-agentic")
     subparsers = parser.add_subparsers(dest="command", required=True)
     subparsers.add_parser("ingest", help="Fetch and ingest the bounded real EURIO seed corpus")
-    investigate = subparsers.add_parser("investigate", help="Produce a cited current brief")
+    investigate = subparsers.add_parser(
+        "investigate", help="Produce a cited current or historical brief"
+    )
     investigate.add_argument("--question", default=CURRENT_QUESTION)
-    investigate.add_argument("--as-of", help="ISO date; rejected until historical mode exists")
+    investigate.add_argument("--as-of", help="ISO cutoff for strict historical eligibility")
     investigate.add_argument("--json", action="store_true", help="Emit the full structured result")
+    compare = subparsers.add_parser(
+        "compare", help="Compare strict historical briefs at two cutoffs"
+    )
+    compare.add_argument("--question", default=CURRENT_QUESTION)
+    compare.add_argument("--from", dest="earlier_as_of", required=True, help="Earlier ISO cutoff")
+    compare.add_argument("--to", dest="later_as_of", required=True, help="Later ISO cutoff")
+    compare.add_argument("--json", action="store_true", help="Emit the full structured comparison")
     subparsers.add_parser("evaluate", help="Print the initial evaluation questions")
     return parser

@@ -15,7 +15,7 @@ from kg_agentic.knowledge.models import (
 
 
 class BridgeGraph:
-    async def find_paths(self, *, project_iris):
+    async def find_paths(self, *, project_iris, as_of=None):
         return (
             StructuralPath(
                 relationships=(
@@ -34,7 +34,7 @@ class BridgeGraph:
 
 
 class InspectionMemory:
-    async def search(self, *, query, corpus_id, limit):
+    async def search(self, *, query, corpus_id, limit, as_of=None):
         return (
             EvidenceItem(
                 id="roads:inspection:7:v1",
@@ -86,3 +86,32 @@ async def test_investigation_contract_is_not_coupled_to_cordis_vocabulary() -> N
     assert result.status == "completed"
     assert result.brief is not None
     assert result.brief.claims[0].citations[0].source_category == "inspection"
+
+
+@pytest.mark.asyncio
+async def test_non_cordis_fixture_applies_the_same_historical_eligibility_rule() -> None:
+    agent = InvestigationAgent(
+        structural_source=BridgeGraph(),
+        evidence_memory=InspectionMemory(),
+        brief_generator=MaintenanceBrief(),
+        project_iris=("asset:bridge-42",),
+        corpus_id="roads:bridge-inspections:v1",
+    )
+
+    before_publication = await agent.investigate(
+        InvestigationRequest(
+            "What maintenance should be commissioned?",
+            as_of=datetime(2025, 6, 1, tzinfo=UTC),
+        )
+    )
+    after_publication = await agent.investigate(
+        InvestigationRequest(
+            "What maintenance should be commissioned?",
+            as_of=datetime(2026, 1, 1, tzinfo=UTC),
+        )
+    )
+
+    assert before_publication.status == "abstained"
+    assert after_publication.status == "completed"
+    assert after_publication.brief is not None
+    assert any("source evidence only" in gap for gap in after_publication.gaps)

@@ -37,3 +37,21 @@ def test_cli_reports_external_service_failure_without_traceback(monkeypatch, cap
     assert "message" not in record
     assert message == "error: service quota unavailable"
     assert "Traceback" not in captured.err
+
+
+def test_compare_command_accepts_two_historical_cutoffs() -> None:
+    args = cli._parser().parse_args(
+        [
+            "compare",
+            "--from",
+            "2025-01-01",
+            "--to",
+            "2027-01-01",
+            "--json",
+        ]
+    )
+
+    assert args.command == "compare"
+    assert args.earlier_as_of == "2025-01-01"
+    assert args.later_as_of == "2027-01-01"
+    assert args.json is True

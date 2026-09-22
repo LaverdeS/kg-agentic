@@ -4,7 +4,9 @@ from typing import Any, Literal, Protocol
 
 from graphiti_core.nodes import EpisodeType, EpisodicNode
 
+from kg_agentic.knowledge.catalog import EvidenceCatalog
 from kg_agentic.knowledge.models import EvidenceItem, EvidenceKind
+from kg_agentic.knowledge.temporal import is_evidence_public_by
 
 
 class EpisodeReader(Protocol):
@@ -31,9 +33,11 @@ class GraphitiEvidenceMemory:
         graphiti: Any,
         *,
         episode_reader: EpisodeReader | None = None,
+        historical_catalog: EvidenceCatalog | None = None,
     ) -> None:
         self._graphiti = graphiti
         self._episode_reader = episode_reader or GraphitiEpisodeReader(graphiti.driver)
+        self._historical_catalog = historical_catalog
 
     async def add(self, item: EvidenceItem) -> None:
         await self._graphiti.add_episode(
@@ -52,7 +56,21 @@ class GraphitiEvidenceMemory:
             ),
         )
 
-    async def search(self, *, query: str, corpus_id: str, limit: int) -> tuple[EvidenceItem, ...]:
+    async def search(
+        self,
+        *,
+        query: str,
+        corpus_id: str,
+        limit: int,
+        as_of: datetime | None = None,
+    ) -> tuple[EvidenceItem, ...]:
+        if as_of is not None:
+            if self._historical_catalog is None:
+                return ()
+            candidates = await self._historical_catalog.items(corpus_id=corpus_id)
+            eligible = (item for item in candidates if is_evidence_public_by(item, as_of))
+            ranked = sorted(eligible, key=lambda item: _relevance(query, item), reverse=True)
+            return tuple(ranked[:limit])
         edges = await self._graphiti.search(
             query,
             group_ids=[_graphiti_group_id(corpus_id)],
@@ -71,7 +89,11 @@ class GraphitiEvidenceMemory:
         seen: set[str] = set()
         for content in contents:
             item = _from_payload(json.loads(content))
-            if item.corpus_id != corpus_id or item.id in seen:
+            if (
+                item.corpus_id != corpus_id
+                or item.id in seen
+                or (as_of is not None and not is_evidence_public_by(item, as_of))
+            ):
                 continue
             seen.add(item.id)
             found.append(item)
@@ -176,3 +198,9 @@ def _graphiti_group_id(corpus_id: str) -> str:
         else f"_u{ord(character):04x}_"
         for character in corpus_id
     )
+
+
+def _relevance(query: str, item: EvidenceItem) -> int:
+    terms = {term for term in query.lower().split() if len(term) > 2}
+    document = f"{item.text} {item.passage or ''}".lower()
+    return sum(term in document for term in terms)

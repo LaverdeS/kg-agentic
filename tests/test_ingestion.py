@@ -1,7 +1,9 @@
+from dataclasses import replace
 from datetime import UTC, datetime
 
 import pytest
 
+from kg_agentic.knowledge.catalog import JsonEvidenceCatalog
 from kg_agentic.knowledge.ingestion import (
     FileSourceArchive,
     IngestionPipeline,
@@ -102,3 +104,76 @@ async def test_file_version_index_survives_reopening(tmp_path) -> None:
 
     assert report.skipped_unchanged == 1
     assert len(list((tmp_path / "raw").glob("*.json"))) == 1
+
+
+@pytest.mark.asyncio
+async def test_changed_source_version_is_retained_alongside_its_prior_revision() -> None:
+    sink = RecordingEpisodeSink()
+    archive = RecordingArchive()
+    pipeline = IngestionPipeline(
+        episode_sink=sink,
+        version_index=InMemoryVersionIndex(),
+        archive=archive,
+    )
+    original = SourceDocument(
+        dataset_id="synthetic-infrastructure",
+        corpus_id="bridge-v1",
+        source_id="inspection/bridge:42",
+        source_url="https://example.test/inspections/bridge-42",
+        source_category="inspection",
+        text="The inspection recommends monitoring only.",
+        passage="Original inspection conclusion.",
+        kind=EvidenceKind.SOURCE_CLAIM,
+        canonical_entity_iris=("asset:bridge-42",),
+        publication_at=datetime(2025, 1, 2, tzinfo=UTC),
+        update_at=None,
+        event_at=datetime(2024, 12, 12, tzinfo=UTC),
+        retrieved_at=datetime(2026, 9, 20, tzinfo=UTC),
+    )
+    correction = replace(
+        original,
+        text="The corrected inspection recommends bearing replacement.",
+        passage="Corrected inspection conclusion.",
+        update_at=datetime(2025, 2, 1, tzinfo=UTC),
+    )
+
+    report = await pipeline.ingest((original, correction))
+
+    assert report.ingested == 2
+    assert len(set(report.version_ids)) == 2
+    assert len(sink.items) == 2
+    assert len(archive.versions) == 2
+
+
+@pytest.mark.asyncio
+async def test_catalog_keeps_unchanged_versions_available_after_reopening(tmp_path) -> None:
+    document = SourceDocument(
+        dataset_id="synthetic-infrastructure",
+        corpus_id="bridge-v1",
+        source_id="inspection/bridge:42",
+        source_url="https://example.test/inspections/bridge-42",
+        source_category="inspection",
+        text="Bearing replacement was recommended.",
+        passage="Bearing replacement was recommended.",
+        kind=EvidenceKind.SOURCE_CLAIM,
+        canonical_entity_iris=("asset:bridge-42",),
+        publication_at=datetime(2025, 1, 2, tzinfo=UTC),
+        update_at=None,
+        event_at=datetime(2024, 12, 12, tzinfo=UTC),
+        retrieved_at=datetime(2026, 9, 20, tzinfo=UTC),
+    )
+    catalog_path = tmp_path / "evidence.json"
+    pipeline = IngestionPipeline(
+        episode_sink=RecordingEpisodeSink(),
+        version_index=InMemoryVersionIndex(),
+        archive=RecordingArchive(),
+        evidence_catalog=JsonEvidenceCatalog(catalog_path),
+    )
+
+    await pipeline.ingest((document,))
+
+    items = await JsonEvidenceCatalog(catalog_path).items(
+        corpus_id="synthetic-infrastructure:bridge-v1"
+    )
+    assert len(items) == 1
+    assert items[0].source_url == document.source_url

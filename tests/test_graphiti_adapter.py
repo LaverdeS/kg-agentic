@@ -31,6 +31,17 @@ class RecordedEpisodeReader:
         return (self.content,)
 
 
+class RecordedEvidenceCatalog:
+    def __init__(self, items):
+        self._items = items
+
+    async def add(self, item):
+        self._items = (*self._items, item)
+
+    async def items(self, *, corpus_id):
+        return tuple(item for item in self._items if item.corpus_id == corpus_id)
+
+
 def evidence_item() -> EvidenceItem:
     return EvidenceItem(
         id="cordis-eurio:cement-v1:project-641185:sha256:abc",
@@ -74,6 +85,34 @@ async def test_graphiti_episode_round_trip_preserves_provenance() -> None:
         ("retrofit capture", ["cordis-eurio_u003a_cement-v1"], 4)
     ]
     assert found == (item,)
+
+
+@pytest.mark.asyncio
+async def test_graphiti_does_not_admit_year_precision_evidence_until_after_that_year() -> None:
+    graphiti = RecordingGraphiti()
+    item = evidence_item()
+    adapter = GraphitiEvidenceMemory(
+        graphiti,
+        episode_reader=RecordedEpisodeReader(json.dumps(adapter_payload(item))),
+        historical_catalog=RecordedEvidenceCatalog((item,)),
+    )
+
+    during_year = await adapter.search(
+        query="retrofit capture",
+        corpus_id=item.corpus_id,
+        limit=4,
+        as_of=datetime(2018, 12, 31, tzinfo=UTC),
+    )
+    after_year = await adapter.search(
+        query="retrofit capture",
+        corpus_id=item.corpus_id,
+        limit=4,
+        as_of=datetime(2019, 1, 1, tzinfo=UTC),
+    )
+
+    assert during_year == ()
+    assert after_year == (item,)
+    assert graphiti.searches == []
 
 
 def adapter_payload(item: EvidenceItem) -> dict[str, object]:

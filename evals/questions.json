@@ -51,12 +51,33 @@
   },
   {
     "id": "cement-historical-1",
-    "question": "What pilot-scale ammonia-capture evidence was public by the end of 2018?",
-    "as_of": "2018-12-31",
+    "question": "What pilot-scale ammonia-capture evidence was demonstrably public by the start of 2019?",
+    "as_of": "2019-01-01",
     "reference_identifiers": ["10.3303/CET1869025", "641185"],
-    "reference_paths": ["CEMCAP project -> hasResult -> ammonia publication"],
+    "reference_paths": ["CEMCAP publication full text; current EURIO paths must be omitted without dated availability"],
+    "acceptable_support": ["Publication passage limited to pilot tests and rate-based modelling", "A visible source-only historical limitation"],
+    "abstain_when": ["Asked to treat current EURIO relationships as evidence available at the cutoff"],
+    "invalid_citation_case": "Current EURIO roles offered as historical support without a dated source version"
+  },
+  {
+    "id": "cement-historical-2",
+    "question": "What public cement-capture evidence can be supported at the end of 2018?",
+    "as_of": "2018-12-31",
+    "reference_identifiers": ["10.5281/zenodo.2593240", "10.3303/CET1869025"],
+    "reference_paths": ["Year-precision deliverable and publication records"],
     "acceptable_support": [],
-    "abstain_when": ["Always in this increment: historical eligibility is not implemented"],
-    "invalid_citation_case": "Current EURIO roles or year-precision deliverable data offered as support for an intra-year cutoff"
+    "abstain_when": ["The retained sources have year precision only, so they cannot support an intra-year cutoff"],
+    "invalid_citation_case": "A source known only to be from 2018 cited as if its exact public date were 2018-12-31"
+  },
+  {
+    "id": "cement-change-1",
+    "question": "Between the start of 2019 and the start of 2020, which retained evidence versions became newly eligible, and what does that establish?",
+    "as_of": "2020-01-01",
+    "comparison_from": "2019-01-01",
+    "reference_identifiers": ["10.5281/zenodo.2593240", "10.3303/CET1869025"],
+    "reference_paths": ["Historical comparison of source-qualified evidence versions"],
+    "acceptable_support": ["An explicit statement when no retained eligible version changed", "No claim that unchanged retrieval proves no real-world change"],
+    "abstain_when": ["Asked to infer an external technology or capability change from an unchanged bounded corpus"],
+    "invalid_citation_case": "A retrieval-ranking difference presented as a change in the underlying evidence"
   }
 ]

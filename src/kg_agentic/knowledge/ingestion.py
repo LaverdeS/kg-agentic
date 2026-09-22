@@ -6,6 +6,7 @@ from enum import Enum
 from pathlib import Path
 from typing import Protocol
 
+from kg_agentic.knowledge.catalog import EvidenceCatalog
 from kg_agentic.knowledge.models import EvidenceItem, SourceDocument
 
 
@@ -100,10 +101,12 @@ class IngestionPipeline:
         episode_sink: EpisodeSink,
         version_index: VersionIndex,
         archive: SourceArchive,
+        evidence_catalog: EvidenceCatalog | None = None,
     ) -> None:
         self._episode_sink = episode_sink
         self._version_index = version_index
         self._archive = archive
+        self._evidence_catalog = evidence_catalog
 
     async def ingest(self, documents: tuple[SourceDocument, ...]) -> IngestionReport:
         ingested = 0
@@ -117,10 +120,6 @@ class IngestionPipeline:
                 f"{document.dataset_id}:{document.corpus_id}:{document.source_id}:{content_hash}"
             )
             version_ids.append(version_id)
-            if await self._version_index.contains(version_id):
-                skipped += 1
-                continue
-
             item = EvidenceItem(
                 id=version_id,
                 corpus_id=f"{document.dataset_id}:{document.corpus_id}",
@@ -139,6 +138,12 @@ class IngestionPipeline:
                 publication_year=document.publication_year,
                 publication_precision=document.publication_precision,
             )
+            if self._evidence_catalog is not None:
+                await self._evidence_catalog.add(item)
+            if await self._version_index.contains(version_id):
+                skipped += 1
+                continue
+
             await self._archive.save(
                 document=document,
                 version_id=version_id,

@@ -2,7 +2,7 @@ from datetime import UTC, datetime
 
 import pytest
 
-from kg_agentic.application.investigation import InvestigationAgent
+from kg_agentic.application.investigation import InvestigationAgent, compare_investigations
 from kg_agentic.knowledge.models import (
     DraftBrief,
     DraftClaim,
@@ -15,7 +15,9 @@ from kg_agentic.knowledge.models import (
 
 
 class RecordedStructuralSource:
-    async def find_paths(self, *, project_iris: tuple[str, ...]) -> tuple[StructuralPath, ...]:
+    async def find_paths(
+        self, *, project_iris: tuple[str, ...], as_of=None
+    ) -> tuple[StructuralPath, ...]:
         return (
             StructuralPath(
                 relationships=(
@@ -37,7 +39,9 @@ class RecordedStructuralSource:
 
 
 class RecordedEvidenceMemory:
-    async def search(self, *, query: str, corpus_id: str, limit: int) -> tuple[EvidenceItem, ...]:
+    async def search(
+        self, *, query: str, corpus_id: str, limit: int, as_of=None
+    ) -> tuple[EvidenceItem, ...]:
         return (
             EvidenceItem(
                 id="cordis:101096691:record:v1",
@@ -90,14 +94,100 @@ class UnsupportedBriefGenerator:
 
 
 class MustNotBeCalled:
-    async def find_paths(self, **kwargs):
-        raise AssertionError("historical requests must stop before retrieval")
-
-    async def search(self, **kwargs):
-        raise AssertionError("historical requests must stop before retrieval")
-
     async def generate(self, **kwargs):
-        raise AssertionError("historical requests must stop before generation")
+        raise AssertionError("historical requests without eligible evidence must not generate")
+
+
+class EmptyHistoricalEvidenceMemory:
+    async def search(self, **kwargs):
+        return ()
+
+
+class HistoricalStructuralSource:
+    async def find_paths(self, *, project_iris, as_of=None):
+        return (
+            StructuralPath(
+                relationships=(
+                    Relationship(
+                        subject="eurio:project/historical",
+                        predicate="eurio:hasResult",
+                        object="eurio:result/dated",
+                        source_url="https://example.test/dated",
+                        available_at=datetime(2024, 5, 1, tzinfo=UTC),
+                    ),
+                )
+            ),
+            StructuralPath(
+                relationships=(
+                    Relationship(
+                        subject="eurio:project/future",
+                        predicate="eurio:hasResult",
+                        object="eurio:result/future",
+                        source_url="https://example.test/future",
+                        available_at=datetime(2026, 1, 1, tzinfo=UTC),
+                    ),
+                )
+            ),
+        )
+
+
+class HistoricalEvidenceMemory:
+    async def search(self, *, query, corpus_id, limit, as_of=None):
+        return (
+            EvidenceItem(
+                id="dated",
+                corpus_id=corpus_id,
+                kind=EvidenceKind.SOURCE_CLAIM,
+                text="A dated source supports a historical claim.",
+                source_url="https://example.test/dated",
+                source_category="publication",
+                content_hash="sha256:dated",
+                retrieved_at=datetime(2026, 9, 20, tzinfo=UTC),
+                published_at=datetime(2024, 5, 1, tzinfo=UTC),
+                event_at=datetime(2024, 4, 1, tzinfo=UTC),
+            ),
+            EvidenceItem(
+                id="future",
+                corpus_id=corpus_id,
+                kind=EvidenceKind.SOURCE_CLAIM,
+                text="A future source must not affect the earlier brief.",
+                source_url="https://example.test/future",
+                source_category="publication",
+                content_hash="sha256:future",
+                retrieved_at=datetime(2026, 9, 20, tzinfo=UTC),
+                published_at=datetime(2026, 1, 1, tzinfo=UTC),
+                event_at=datetime(2025, 1, 1, tzinfo=UTC),
+            ),
+            EvidenceItem(
+                id="unknown-publication-date",
+                corpus_id=corpus_id,
+                kind=EvidenceKind.SOURCE_CLAIM,
+                text="An event date does not prove this source was public then.",
+                source_url="https://example.test/unknown",
+                source_category="project_record",
+                content_hash="sha256:unknown",
+                retrieved_at=datetime(2026, 9, 20, tzinfo=UTC),
+                published_at=None,
+                event_at=datetime(2020, 1, 1, tzinfo=UTC),
+            ),
+        )
+
+
+class HistoricalBriefGenerator:
+    def __init__(self) -> None:
+        self.evidence_ids: tuple[str, ...] = ()
+
+    async def generate(self, *, question, plan, paths, evidence):
+        self.evidence_ids = tuple(item.id for item in evidence)
+        support = ("dated",)
+        return DraftBrief(
+            decision=DraftClaim("Use the historically public evidence.", support),
+            recommendation=DraftClaim("Commission a validation step.", support),
+            alternatives=(),
+            uncertainty=DraftClaim("Only one dated source is available.", support),
+            next_action=DraftClaim("Seek an independently dated source.", support),
+            claims=(DraftClaim("The dated source supports this claim.", support),),
+        )
 
 
 @pytest.mark.asyncio
@@ -147,11 +237,11 @@ async def test_unsupported_generated_claim_is_removed_and_agent_abstains() -> No
 
 
 @pytest.mark.asyncio
-async def test_historical_request_stops_before_current_evidence_is_queried() -> None:
+async def test_historical_request_abstains_when_no_evidence_has_public_availability() -> None:
     never = MustNotBeCalled()
     agent = InvestigationAgent(
-        structural_source=never,
-        evidence_memory=never,
+        structural_source=HistoricalStructuralSource(),
+        evidence_memory=EmptyHistoricalEvidenceMemory(),
         brief_generator=never,
         project_iris=("eurio:project/herccules",),
         corpus_id="cordis:cement:v1",
@@ -164,6 +254,76 @@ async def test_historical_request_stops_before_current_evidence_is_queried() -> 
         )
     )
 
-    assert result.status == "unsupported_historical_request"
+    assert result.status == "abstained"
     assert result.evidence == ()
     assert result.brief is None
+
+
+@pytest.mark.asyncio
+async def test_historical_investigation_excludes_future_and_undated_evidence_before_generation(
+) -> None:
+    generator = HistoricalBriefGenerator()
+    agent = InvestigationAgent(
+        structural_source=HistoricalStructuralSource(),
+        evidence_memory=HistoricalEvidenceMemory(),
+        brief_generator=generator,
+        project_iris=("eurio:project/historical",),
+        corpus_id="cordis:cement:v1",
+    )
+
+    result = await agent.investigate(
+        InvestigationRequest(
+            question="What was supported then?",
+            as_of=datetime(2025, 1, 1, tzinfo=UTC),
+        )
+    )
+
+    assert result.status == "completed"
+    assert tuple(item.id for item in result.evidence) == ("dated",)
+    assert generator.evidence_ids == ("dated",)
+    assert len(result.paths) == 1
+    assert result.paths[0].relationships[0].object == "eurio:result/dated"
+
+
+@pytest.mark.asyncio
+async def test_comparison_attributes_newly_eligible_evidence_to_its_source_version() -> None:
+    agent = InvestigationAgent(
+        structural_source=HistoricalStructuralSource(),
+        evidence_memory=HistoricalEvidenceMemory(),
+        brief_generator=HistoricalBriefGenerator(),
+        project_iris=("eurio:project/historical",),
+        corpus_id="cordis:cement:v1",
+    )
+    question = "What changed in the available support?"
+    earlier = await agent.investigate(
+        InvestigationRequest(question=question, as_of=datetime(2025, 1, 1, tzinfo=UTC))
+    )
+    later = await agent.investigate(
+        InvestigationRequest(question=question, as_of=datetime(2027, 1, 1, tzinfo=UTC))
+    )
+
+    comparison = compare_investigations(
+        earlier=earlier,
+        earlier_as_of=datetime(2025, 1, 1, tzinfo=UTC),
+        later=later,
+        later_as_of=datetime(2027, 1, 1, tzinfo=UTC),
+    )
+
+    assert tuple(item.id for item in comparison.later_only_retrieved_evidence) == ("future",)
+    assert comparison.later_only_retrieved_evidence[0].source_url == "https://example.test/future"
+    assert "future" in comparison.changes[0]
+
+
+def test_revised_evidence_is_not_public_before_its_update_date() -> None:
+    from kg_agentic.knowledge.temporal import is_evidence_public_by
+
+    revised = EvidenceItem(
+        id="revised", corpus_id="fixture", kind=EvidenceKind.SOURCE_CLAIM, text="Corrected.",
+        source_url="https://example.test/revised", source_category="inspection",
+        content_hash="sha256:revised", retrieved_at=datetime(2026, 1, 1, tzinfo=UTC),
+        published_at=datetime(2025, 1, 1, tzinfo=UTC), event_at=None,
+        updated_at=datetime(2025, 2, 1, tzinfo=UTC),
+    )
+
+    assert not is_evidence_public_by(revised, datetime(2025, 1, 15, tzinfo=UTC))
+    assert is_evidence_public_by(revised, datetime(2025, 2, 1, tzinfo=UTC))

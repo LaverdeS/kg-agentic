@@ -8,6 +8,7 @@ from kg_agentic.knowledge.models import (
     DraftBrief,
     DraftClaim,
     EvidenceItem,
+    InvestigationComparison,
     InvestigationPlan,
     InvestigationRequest,
     InvestigationResult,
@@ -16,15 +17,18 @@ from kg_agentic.knowledge.models import (
     SupportedClaim,
     TraceStep,
 )
+from kg_agentic.knowledge.temporal import is_evidence_public_by, is_path_public_by
 
 
 class StructuralSource(Protocol):
-    async def find_paths(self, *, project_iris: tuple[str, ...]) -> tuple[StructuralPath, ...]: ...
+    async def find_paths(
+        self, *, project_iris: tuple[str, ...], as_of: datetime | None = None
+    ) -> tuple[StructuralPath, ...]: ...
 
 
 class EvidenceMemory(Protocol):
     async def search(
-        self, *, query: str, corpus_id: str, limit: int
+        self, *, query: str, corpus_id: str, limit: int, as_of: datetime | None = None
     ) -> tuple[EvidenceItem, ...]: ...
 
 
@@ -78,23 +82,34 @@ class InvestigationAgent:
         )
         trace = [TraceStep(action="plan", count=len(plan.actions))]
 
+        paths = await self._structural_source.find_paths(
+            project_iris=self._project_iris, as_of=request.as_of
+        )
         if request.as_of is not None:
-            return unsupported_historical_result(question, request.as_of, plan=plan)
-
-        paths = await self._structural_source.find_paths(project_iris=self._project_iris)
+            paths = tuple(path for path in paths if is_path_public_by(path, request.as_of))
         trace.append(TraceStep(action="retrieve_structural_paths", count=len(paths)))
 
         evidence = await self._evidence_memory.search(
             query=question,
             corpus_id=self._corpus_id,
             limit=self._evidence_limit,
+            as_of=request.as_of,
         )
+        if request.as_of is not None:
+            evidence = tuple(
+                item for item in evidence if is_evidence_public_by(item, request.as_of)
+            )
         trace.append(TraceStep(action="retrieve_semantic_evidence", count=len(evidence)))
 
-        if not paths or not evidence:
+        if not evidence:
             missing = []
             if not paths:
-                missing.append("No organization-project-output path was retrieved.")
+                missing.append(
+                    "No organization-project-output path was retrieved with dated public "
+                    "availability."
+                    if request.as_of is not None
+                    else "No organization-project-output path was retrieved."
+                )
             if not evidence:
                 missing.append("No semantic evidence was retrieved from the configured corpus.")
             trace.append(TraceStep(action="check_support", detail="abstained"))
@@ -114,7 +129,13 @@ class InvestigationAgent:
             paths=paths,
             evidence=evidence,
         )
-        brief, gaps = _resolve_supported_claims(draft, evidence)
+        brief, gaps = _resolve_supported_claims(draft, evidence, as_of=request.as_of)
+        if request.as_of is not None and not paths:
+            gaps = (
+                "No organization-project-output path had dated public availability by the cutoff; "
+                "the historical brief is supported by source evidence only.",
+                *gaps,
+            )
         trace.append(
             TraceStep(
                 action="check_support",
@@ -134,7 +155,10 @@ class InvestigationAgent:
 
 
 def _resolve_supported_claims(
-    draft: DraftBrief, evidence: tuple[EvidenceItem, ...]
+    draft: DraftBrief,
+    evidence: tuple[EvidenceItem, ...],
+    *,
+    as_of: datetime | None = None,
 ) -> tuple[RecommendationBrief | None, tuple[str, ...]]:
     evidence_by_id = {item.id: item for item in evidence}
     gaps: list[str] = []
@@ -151,6 +175,7 @@ def _resolve_supported_claims(
             for evidence_id in claim.evidence_ids
             if (item := evidence_by_id.get(evidence_id)) is not None
             and _is_resolvable_url(item.source_url)
+            and (as_of is None or is_evidence_public_by(item, as_of))
         )
         if not citations:
             gaps.append(f"Unsupported material statement omitted: {claim.text}")
@@ -185,26 +210,44 @@ def _resolve_supported_claims(
     )
 
 
-def unsupported_historical_result(
-    question: str,
-    as_of: datetime,
+def compare_investigations(
     *,
-    plan: InvestigationPlan | None = None,
-) -> InvestigationResult:
-    bounded_plan = plan or InvestigationPlan(
-        question=question,
-        actions=("Reject unsupported historical mode before retrieval.",),
+    earlier: InvestigationResult,
+    earlier_as_of: datetime,
+    later: InvestigationResult,
+    later_as_of: datetime,
+) -> InvestigationComparison:
+    """Attribute two historical result differences to retrieved source versions, not inference."""
+    if later_as_of <= earlier_as_of:
+        raise ValueError("later_as_of must be after earlier_as_of")
+
+    earlier_by_id = {item.id: item for item in earlier.evidence}
+    later_by_id = {item.id: item for item in later.evidence}
+    later_only = tuple(item for item in later.evidence if item.id not in earlier_by_id)
+    no_longer_retrieved = tuple(item for item in earlier.evidence if item.id not in later_by_id)
+    changes = tuple(
+        [
+            f"Evidence retrieved only in the later result, not proof it became newly eligible: "
+            f"{item.id} ({item.source_url}; {item.content_hash})."
+            for item in later_only
+        ]
+        + [
+            (
+                f"No longer retrieved as eligible evidence: {item.id} ({item.source_url}; "
+                f"{item.content_hash})."
+            )
+            for item in no_longer_retrieved
+        ]
+        or ["No retrieved eligible evidence changed between the two cutoffs."]
     )
-    return InvestigationResult(
-        status="unsupported_historical_request",
-        plan=bounded_plan,
-        trace=(TraceStep(action="plan", detail=f"as_of={as_of.isoformat()}"),),
-        paths=(),
-        evidence=(),
-        brief=None,
-        gaps=(
-            "Historical evidence eligibility is not implemented; current evidence was not queried.",
-        ),
+    return InvestigationComparison(
+        earlier_as_of=earlier_as_of,
+        earlier=earlier,
+        later_as_of=later_as_of,
+        later=later,
+        later_only_retrieved_evidence=later_only,
+        no_longer_retrieved_evidence=no_longer_retrieved,
+        changes=changes,
     )
 
 
