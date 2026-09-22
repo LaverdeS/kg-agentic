@@ -1,7 +1,13 @@
-from typing import cast
+import json
+from http.client import HTTPConnection
+from http.server import ThreadingHTTPServer
+from threading import Thread
+from typing import Any, cast
 
+from local_experience.api.conversation import ConversationRequest, ConversationRunner
 from local_experience.api.recorded import recorded_result
 from local_experience.api.scene import project_scene, scene_payload
+from local_experience.api.server import ExplorerHandler
 
 
 def test_recorded_scene_preserves_source_qualified_graph_and_citations() -> None:
@@ -15,7 +21,12 @@ def test_recorded_scene_preserves_source_qualified_graph_and_citations() -> None
     brief = cast(dict[str, object], payload["brief"])
     recommendation = cast(dict[str, object], brief["recommendation"])
     citations = cast(list[dict[str, object]], recommendation["citations"])
-    assert len(evidence) == 3
+    assert len(evidence) == 4
+    deliverable = next(
+        item for item in evidence if item["sourceCategory"] == "public_deliverable_full_text"
+    )
+    assert "CEMCAP D4.5" in cast(str, deliverable["text"])
+    assert "zenodo.org/records/2593240" in cast(str, deliverable["sourceUrl"])
     assert cast(str, citations[0]["evidence_id"]).startswith(
         "publication:"
     )
@@ -28,3 +39,113 @@ def test_recorded_scene_is_current_only_and_does_not_claim_live_data() -> None:
         "This recorded UX snapshot is current-only; historical requests remain unsupported.",
     )
     assert scene.status == "completed"
+
+
+def test_recorded_conversation_streams_public_stages_and_keeps_selected_context() -> None:
+    server = ThreadingHTTPServer(("127.0.0.1", 0), ExplorerHandler)
+    worker = Thread(target=server.handle_request)
+    worker.start()
+    connection = HTTPConnection("127.0.0.1", server.server_port)
+    request = {
+        "mode": "recorded",
+        "question": "Which CEMCAP evidence should I inspect next?",
+        "threadId": "consultant-1",
+        "selectedNodeIds": ["evidence:publication:perez-calvo-2018:recorded"],
+    }
+
+    try:
+        connection.request(
+            "POST",
+            "/api/conversations",
+            body=json.dumps(request),
+            headers={"Content-Type": "application/json"},
+        )
+        response = connection.getresponse()
+        payload = response.read().decode()
+    finally:
+        connection.close()
+        worker.join(timeout=1)
+        server.server_close()
+
+    assert response.status == 200
+    events = _sse_events(payload)
+    assert [event["event"] for event in events] == [
+        "run_started",
+        "activity",
+        "activity",
+        "activity",
+        "activity",
+        "graph_delta",
+        "completed",
+    ]
+    assert [event["data"]["action"] for event in events[1:5]] == [
+        "planned",
+        "retrieved_path",
+        "evidence_found",
+        "claim_supported",
+    ]
+    assert events[-1]["data"]["conversation"]["threadId"] == "consultant-1"
+    assert events[-1]["data"]["conversation"]["selectedNodeIds"] == request["selectedNodeIds"]
+
+
+def test_recorded_conversation_rejects_a_historical_cutoff() -> None:
+    server = ThreadingHTTPServer(("127.0.0.1", 0), ExplorerHandler)
+    worker = Thread(target=server.handle_request)
+    worker.start()
+    connection = HTTPConnection("127.0.0.1", server.server_port)
+
+    try:
+        connection.request(
+            "POST",
+            "/api/conversations",
+            body=json.dumps(
+                {
+                    "mode": "recorded",
+                    "question": "What was known in 2019?",
+                    "threadId": "consultant-1",
+                    "asOf": "2019-01-01",
+                }
+            ),
+            headers={"Content-Type": "application/json"},
+        )
+        response = connection.getresponse()
+        payload = json.loads(response.read())
+    finally:
+        connection.close()
+        worker.join(timeout=1)
+        server.server_close()
+
+    assert response.status == 400
+    assert payload == {"error": "An asOf date requires a live investigation."}
+
+
+def test_conversation_threads_are_isolated_and_resettable() -> None:
+    runner = ConversationRunner(
+        lambda question, mode, as_of: {
+            **scene_payload(project_scene(recorded_result(), mode=mode)),
+            "question": question,
+        }
+    )
+
+    first = runner.run(ConversationRequest("one", "What should I inspect?", "recorded"))
+    follow_up = runner.run(
+        ConversationRequest("one", "What changes the recommendation?", "recorded")
+    )
+    separate = runner.run(ConversationRequest("two", "What should I inspect?", "recorded"))
+    runner.reset("one")
+    reset = runner.run(ConversationRequest("one", "Start over.", "recorded"))
+
+    assert len(cast(dict[str, list[object]], first.scene["conversation"])["messages"]) == 2
+    assert len(cast(dict[str, list[object]], follow_up.scene["conversation"])["messages"]) == 4
+    assert len(cast(dict[str, list[object]], separate.scene["conversation"])["messages"]) == 2
+    assert len(cast(dict[str, list[object]], reset.scene["conversation"])["messages"]) == 2
+
+
+def _sse_events(payload: str) -> list[dict[str, Any]]:
+    return [
+        {
+            "event": block.removeprefix("event: ").split("\n", maxsplit=1)[0],
+            "data": json.loads(block.split("data: ", maxsplit=1)[1]),
+        }
+        for block in payload.strip().split("\n\n")
+    ]

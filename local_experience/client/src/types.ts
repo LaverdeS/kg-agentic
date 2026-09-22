@@ -64,6 +64,18 @@ export interface Trace {
   detail?: string;
 }
 
+export interface ConversationMessage {
+  role: "user" | "assistant";
+  content: string;
+}
+
+export interface Conversation {
+  threadId: string;
+  selectedNodeIds: string[];
+  messages: ConversationMessage[];
+  asOf: string | null;
+}
+
 export interface Scene {
   question: string;
   status: string;
@@ -75,4 +87,5 @@ export interface Scene {
   trace: Trace[];
   gaps: string[];
   usage?: Record<string, number>;
+  conversation?: Conversation;
 }

@@ -22,10 +22,18 @@ interface GraphCanvasProps {
   selectedId: string | null;
   pinnedId: string | null;
   visibleKinds: Set<string>;
+  visibleRelationshipTypes: Set<string>;
   onSelect: (id: string) => void;
 }
 
-export function GraphCanvas({ scene, selectedId, pinnedId, visibleKinds, onSelect }: GraphCanvasProps) {
+const EDGE_COLORS: Record<string, string> = {
+  supports: "#f6b75a",
+  hasResult: "#8d7dd3",
+  hasInvolvedParty: "#70717d",
+  isRoleOf: "#4e515e",
+};
+
+export function GraphCanvas({ scene, selectedId, pinnedId, visibleKinds, visibleRelationshipTypes, onSelect }: GraphCanvasProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const sigmaRef = useRef<Sigma | null>(null);
 
@@ -43,11 +51,21 @@ export function GraphCanvas({ scene, selectedId, pinnedId, visibleKinds, onSelec
         color: COLORS[node.kind],
       });
     }
-    for (const edge of scene.edges) {
+    const visibleEdges = scene.edges.filter((edge) => visibleRelationshipTypes.has(edge.label));
+    const focusId = selectedId ?? pinnedId;
+    const neighborhood = new Set<string>();
+    if (focusId) {
+      neighborhood.add(focusId);
+      for (const edge of visibleEdges) {
+        if (edge.source === focusId) neighborhood.add(edge.target);
+        if (edge.target === focusId) neighborhood.add(edge.source);
+      }
+    }
+    for (const edge of visibleEdges) {
       if (graph.hasNode(edge.source) && graph.hasNode(edge.target)) {
         graph.addEdgeWithKey(edge.id, edge.source, edge.target, {
           label: edge.label,
-          color: "#34323d",
+          color: EDGE_COLORS[edge.label] ?? "#34323d",
           size: 1.5,
           type: "arrow",
         });
@@ -55,6 +73,7 @@ export function GraphCanvas({ scene, selectedId, pinnedId, visibleKinds, onSelec
     }
     const renderer = new Sigma(graph, container, {
       renderEdgeLabels: false,
+      renderLabels: window.innerWidth >= 600,
       enableEdgeEvents: false,
       labelDensity: 1.3,
       labelGridCellSize: 80,
@@ -65,11 +84,10 @@ export function GraphCanvas({ scene, selectedId, pinnedId, visibleKinds, onSelec
     });
     renderer.setSetting("nodeReducer", (node, data) => ({
       ...data,
+      color: node === selectedId ? "#ffffff" : focusId && !neighborhood.has(node) ? "#292731" : data.color,
       highlighted: node === selectedId || node === pinnedId,
-      color: node === selectedId ? "#ffffff" : data.color,
       size: node === selectedId ? data.size + 3 : data.size,
     }));
-    const focusId = pinnedId ?? selectedId;
     if (focusId && graph.hasNode(focusId)) {
       const { x, y } = graph.getNodeAttributes(focusId);
       renderer.getCamera().setState({ x, y, ratio: 0.65 });
@@ -77,7 +95,7 @@ export function GraphCanvas({ scene, selectedId, pinnedId, visibleKinds, onSelec
     renderer.on("clickNode", ({ node }) => onSelect(node));
     sigmaRef.current = renderer;
     return () => renderer.kill();
-  }, [scene, selectedId, pinnedId, visibleKinds, onSelect]);
+  }, [scene, selectedId, pinnedId, visibleKinds, visibleRelationshipTypes, onSelect]);
 
   return <div className="graph-canvas" ref={containerRef} aria-hidden="true" />;
 }

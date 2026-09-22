@@ -117,11 +117,21 @@ npm run ui:build
 .\.venv\Scripts\python.exe -m local_experience.api.server
 ```
 
-Open `http://127.0.0.1:8000`. Select a graph element, cited evidence link, or
-keyboard-accessible scene-index item to inspect its identifiers and provenance.
-The explorer's editable recorded walkthrough changes its run context only; it
-does not present a synthetic fresh recommendation. Its live API route invokes
-the same core use case as the CLI and reports unavailable services explicitly.
+Open `http://127.0.0.1:8000`. Search or select a graph element, cited evidence
+link, or keyboard-accessible scene-index item to inspect its identifiers and
+provenance; selection focuses its immediate neighborhood and can be supplied to
+the local conversation as navigation context, never as evidence. The optional
+LangGraph conversation has thread-scoped in-memory memory and emits only public
+investigation stages. Resetting the conversation or restarting the server clears
+that memory. The recorded walkthrough is current-only and cannot accept a
+historical cutoff; Live core run accepts an optional strict historical date and
+invokes the same core use case as the CLI, reporting unavailable services
+explicitly. The recorded scene distinguishes the CEMCAP D4.5 full-text
+deliverable from result metadata and the ammonia publication.
+
+After starting the local server, `npm run ui:test` runs the recorded browser
+journey, including activity, thread memory, evidence focus, and reduced-motion
+checks.
 
 The comparison command reports source-qualified evidence versions retrieved only at one cutoff;
 it explicitly does not treat a retrieval/ranking difference as newly eligible evidence or a

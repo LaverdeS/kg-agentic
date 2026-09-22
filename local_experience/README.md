@@ -17,10 +17,21 @@ current-only recorded snapshot of the cement slice, for inspecting interaction
 and citation behavior without an API call. Editing its question changes the run
 context only; it does not claim to generate a new answer.
 
-`POST /api/investigations` also accepts `{"mode": "live", "question": "..."}`.
-That route invokes the existing application composition. If EURIO, Neo4j, or the
-model is unavailable, it sends a failure event instead of substituting the
-recorded snapshot.
+`POST /api/conversations` accepts a `threadId`, question, mode, optional
+`selectedNodeIds`, and (for live mode only) an ISO `asOf` cutoff. It runs a
+small LangGraph workflow with process-local, thread-scoped checkpoints, calls
+the existing investigation composition, and sends only bounded public SSE
+stages: `planned`, `retrieved_path`, `evidence_found`, and `claim_supported`.
+`DELETE /api/conversations/<threadId>` clears that local thread. Restarting the
+server also clears every thread. Selection is navigation context, never
+evidence; live historical questions still enforce the core's strict
+cutoff-eligibility policy. If EURIO, Neo4j, or the model is unavailable, the
+route sends a failure event instead of substituting the recorded snapshot.
+
+The recorded scene now includes the source-qualified CEMCAP D4.5 full-text
+deliverable as distinct from project records, metadata-only results, and the
+ammonia publication. It remains a current-only UI fixture: it cannot answer a
+historical question or claim a newly generated recommendation.
 
 ## Renderer decision
 
@@ -38,3 +49,15 @@ force layout is a weaker default for stable investigation scenes. Sources:
 [Sigma](https://www.sigmajs.org/), [Cytoscape](https://js.cytoscape.org/),
 [NVL](https://neo4j.com/docs/nvl/current/), and
 [react-force-graph](https://github.com/vasturiano/react-force-graph).
+
+## Browser check
+
+After building the client and starting the local server, run the deterministic
+recorded journey with:
+
+```powershell
+npm run ui:test
+```
+
+It checks the conversation/public-activity flow, CEMCAP D4.5 inspection,
+reduced-motion preference, and the keyboard-accessible evidence/detail surface.

@@ -2,7 +2,8 @@
   "scripts": {
     "ui": "npm --prefix local_experience/client run dev",
     "ui:build": "npm --prefix local_experience/client run build",
-    "ui:preview": "npm --prefix local_experience/client run preview"
+    "ui:preview": "npm --prefix local_experience/client run preview",
+    "ui:test": "playwright test"
   },
   "devDependencies": {
     "@nanonets/graft": "^0.18.0",

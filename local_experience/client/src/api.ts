@@ -6,18 +6,28 @@ export async function getRecordedScene(): Promise<Scene> {
   return response.json() as Promise<Scene>;
 }
 
-export async function streamInvestigation(
-  question: string,
-  mode: "recorded" | "live",
+export interface ConversationInput {
+  question: string;
+  mode: "recorded" | "live";
+  threadId: string;
+  selectedNodeIds: string[];
+  asOf: string | null;
+}
+
+export async function streamConversation(
+  input: ConversationInput,
   onActivity: (trace: Trace) => void,
   onGraphDelta: (delta: Pick<Scene, "nodes" | "edges">) => void,
 ): Promise<Scene> {
-  const response = await fetch("/api/investigations", {
+  const response = await fetch("/api/conversations", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ question, mode }),
+    body: JSON.stringify(input),
   });
-  if (!response.ok || !response.body) throw new Error(`Investigation request failed (${response.status}).`);
+  if (!response.ok || !response.body) {
+    const failure = await response.json().catch(() => ({})) as { error?: string };
+    throw new Error(failure.error ?? `Conversation request failed (${response.status}).`);
+  }
 
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
@@ -41,6 +51,11 @@ export async function streamInvestigation(
     }
     if (done) break;
   }
-  if (!finalScene) throw new Error("The API ended without a completed scene.");
+  if (!finalScene) throw new Error("The conversation ended without a completed investigation.");
   return finalScene;
+}
+
+export async function resetConversation(threadId: string): Promise<void> {
+  const response = await fetch(`/api/conversations/${encodeURIComponent(threadId)}`, { method: "DELETE" });
+  if (!response.ok) throw new Error(`Conversation reset failed (${response.status}).`);
 }
