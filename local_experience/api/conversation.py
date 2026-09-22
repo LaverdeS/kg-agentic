@@ -199,8 +199,11 @@ class ConversationRunner:
         brief = cast(dict[str, object] | None, scene.get("brief"))
         if state.get("mode") == "recorded":
             summary = (
-                "Recorded walkthrough: this replays a fixed cited brief. Inspect the selected "
-                "source evidence rather than treating it as a newly generated answer."
+                "Recorded example: this is the only recorded example in this local build, so it "
+                "replays the same fixed CEMCAP evidence rather than creating a recommendation "
+                "from your exact wording. I recommend starting with CEMCAP D4.5: it explains the "
+                "retrofit criteria and what the example cannot prove. Use Live mode for a new "
+                "investigation when its services are configured."
             )
         elif brief is None:
             summary = "The investigation abstained; inspect the recorded gaps before continuing."

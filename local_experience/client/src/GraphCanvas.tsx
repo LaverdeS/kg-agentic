@@ -23,6 +23,7 @@ interface GraphCanvasProps {
   pinnedId: string | null;
   visibleKinds: Set<string>;
   visibleRelationshipTypes: Set<string>;
+  highlightedNodeIds: Set<string>;
   onSelect: (id: string) => void;
 }
 
@@ -33,7 +34,7 @@ const EDGE_COLORS: Record<string, string> = {
   isRoleOf: "#4e515e",
 };
 
-export function GraphCanvas({ scene, selectedId, pinnedId, visibleKinds, visibleRelationshipTypes, onSelect }: GraphCanvasProps) {
+export function GraphCanvas({ scene, selectedId, pinnedId, visibleKinds, visibleRelationshipTypes, highlightedNodeIds, onSelect }: GraphCanvasProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const sigmaRef = useRef<Sigma | null>(null);
 
@@ -84,9 +85,15 @@ export function GraphCanvas({ scene, selectedId, pinnedId, visibleKinds, visible
     });
     renderer.setSetting("nodeReducer", (node, data) => ({
       ...data,
-      color: node === selectedId ? "#ffffff" : focusId && !neighborhood.has(node) ? "#292731" : data.color,
-      highlighted: node === selectedId || node === pinnedId,
-      size: node === selectedId ? data.size + 3 : data.size,
+      color: node === selectedId ? "#ffffff" : focusId && !neighborhood.has(node) ? "#292731" : highlightedNodeIds.size && !highlightedNodeIds.has(node) ? "#24232a" : data.color,
+      highlighted: node === selectedId || node === pinnedId || highlightedNodeIds.has(node),
+      label: focusId && !neighborhood.has(node) || highlightedNodeIds.size && !highlightedNodeIds.has(node) ? "" : data.label,
+      size: node === selectedId || highlightedNodeIds.has(node) ? data.size + 3 : data.size,
+    }));
+    renderer.setSetting("edgeReducer", (edge, data) => ({
+      ...data,
+      color: highlightedNodeIds.size && !highlightedNodeIds.has(graph.source(edge)) && !highlightedNodeIds.has(graph.target(edge)) ? "#201f25" : data.color,
+      size: highlightedNodeIds.size && !highlightedNodeIds.has(graph.source(edge)) && !highlightedNodeIds.has(graph.target(edge)) ? 0.45 : data.size,
     }));
     if (focusId && graph.hasNode(focusId)) {
       const { x, y } = graph.getNodeAttributes(focusId);
@@ -95,7 +102,7 @@ export function GraphCanvas({ scene, selectedId, pinnedId, visibleKinds, visible
     renderer.on("clickNode", ({ node }) => onSelect(node));
     sigmaRef.current = renderer;
     return () => renderer.kill();
-  }, [scene, selectedId, pinnedId, visibleKinds, visibleRelationshipTypes, onSelect]);
+  }, [scene, selectedId, pinnedId, visibleKinds, visibleRelationshipTypes, highlightedNodeIds, onSelect]);
 
   return <div className="graph-canvas" ref={containerRef} aria-hidden="true" />;
 }

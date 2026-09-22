@@ -46,6 +46,27 @@ def recorded_result() -> InvestigationResult:
             ),
             strict=True,
         )
+    ) + (
+        _path(
+            SEED_PROJECTS[0],
+            ("b5ea69de-2fa3-3f08-b387-b21111a88e37", "participant"),
+            "2cc39403-e975-327f-8657-8df803af027d",
+            "671b76de-97f6-3c7e-8f4a-18cd5c5a24ce",
+        ),
+        _path(
+            SEED_PROJECTS[1],
+            ("cc295211-bb12-31b1-ba63-d67389ea9fec", "participant"),
+            "461c02da-5450-3ad1-ba61-10d85f5c4583",
+            "671b76de-97f6-3c7e-8f4a-18cd5c5a24ce",
+        ),
+        _path(
+            SEED_PROJECTS[2],
+            ("c8e27e98-705c-3aec-9b08-4c638b353f22", "participant"),
+            "2d34f8d6-c3ec-3593-8bb1-12e4a264a6a9",
+            "671b76de-97f6-3c7e-8f4a-18cd5c5a24ce",
+        ),
+        _output_path(SEED_PROJECTS[0], "9c2afdde-8a12-365e-b1e3-e2d80d3e115c"),
+        _output_path(SEED_PROJECTS[0], "afaf42f5-15c7-3c14-ba5b-012eb4c8b2ac"),
     )
     evidence = (
         EvidenceItem(
@@ -91,6 +112,40 @@ def recorded_result() -> InvestigationResult:
             canonical_entity_iris=CEMCAP_AMMONIA_PUBLICATION.canonical_entity_iris,
             publication_year=2018,
             publication_precision="year",
+        ),
+        EvidenceItem(
+            id="cordis:cemcap:d3.2-metadata:recorded",
+            corpus_id=CORPUS_ID,
+            kind=EvidenceKind.SOURCE_CLAIM,
+            text=(
+                "The CEMCAP catalogue lists a framework for comparative techno-economic "
+                "analysis of CO2 capture from cement plants. This local record is metadata only."
+            ),
+            source_url="https://cordis.europa.eu/project/id/641185/results",
+            source_category="result_metadata",
+            content_hash="recorded:cemcap-d3.2-metadata",
+            retrieved_at=retrieved_at,
+            published_at=None,
+            event_at=None,
+            passage="Recorded CORDIS output-catalogue metadata; full text was not inspected.",
+            canonical_entity_iris=(SEED_PROJECTS[0].iri,),
+        ),
+        EvidenceItem(
+            id="cordis:leilac2:result-metadata:recorded",
+            corpus_id=CORPUS_ID,
+            kind=EvidenceKind.SOURCE_CLAIM,
+            text=(
+                "The LEILAC2 catalogue lists a public summary of retrofit and integration "
+                "analysis. This local record is metadata only, not full-text comparison evidence."
+            ),
+            source_url="https://cordis.europa.eu/project/id/884170/results",
+            source_category="result_metadata",
+            content_hash="recorded:leilac2-result-metadata",
+            retrieved_at=retrieved_at,
+            published_at=None,
+            event_at=None,
+            passage="Recorded CORDIS output-catalogue metadata; full text was not inspected.",
+            canonical_entity_iris=(SEED_PROJECTS[1].iri,),
         ),
         EvidenceItem(
             id="deliverable:cemcap-d4.5-v1:recorded",
@@ -169,12 +224,12 @@ def recorded_result() -> InvestigationResult:
     )
 
 
-def _path(project, role_data: tuple[str, str], result_id: str) -> StructuralPath:
+def _path(
+    project, role_data: tuple[str, str], result_id: str, organisation_id: str = "5ddbaa23-06d6-39f8-8b9f-9fd78d53f149"
+) -> StructuralPath:
     role_id, role_label = role_data
     role_iri = f"http://data.europa.eu/s66/resource/organisationroles/{role_id}"
-    organisation_iri = (
-        "http://data.europa.eu/s66/resource/organisations/5ddbaa23-06d6-39f8-8b9f-9fd78d53f149"
-    )
+    organisation_iri = f"http://data.europa.eu/s66/resource/organisations/{organisation_id}"
     result_iri = f"http://data.europa.eu/s66/resource/results/{result_id}"
     source_url = f"https://cordis.europa.eu/project/id/{project.grant_id}"
     return StructuralPath(
@@ -187,6 +242,14 @@ def _path(project, role_data: tuple[str, str], result_id: str) -> StructuralPath
             ),
             Relationship(project.iri, "hasResult", result_iri, source_url),
         )
+    )
+
+
+def _output_path(project, result_id: str) -> StructuralPath:
+    result_iri = f"http://data.europa.eu/s66/resource/results/{result_id}"
+    source_url = f"https://cordis.europa.eu/project/id/{project.grant_id}/results"
+    return StructuralPath(
+        relationships=(Relationship(project.iri, "hasResult", result_iri, source_url),)
     )
 
 

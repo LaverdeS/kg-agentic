@@ -168,8 +168,11 @@ def _entity_label(entity_id: str) -> str:
         "a3628245-f605-33d4-81ec-10086462f8a1": "LEILAC2 · 884170",
         "4bdcdbb5-0dac-357a-94e6-98df709eccad": "HERCCULES · 101096691",
         "5ddbaa23-06d6-39f8-8b9f-9fd78d53f149": "LEAP",
+        "671b76de-97f6-3c7e-8f4a-18cd5c5a24ce": "POLIMI",
         "2cc39403-e975-327f-8657-8df803af027d": "CEMCAP result metadata",
         "461c02da-5450-3ad1-ba61-10d85f5c4583": "LEILAC2 result metadata",
+        "9c2afdde-8a12-365e-b1e3-e2d80d3e115c": "CEMCAP framework metadata",
+        "afaf42f5-15c7-3c14-ba5b-012eb4c8b2ac": "CEMCAP ammonia publication metadata",
         "2d34f8d6-c3ec-3593-8bb1-12e4a264a6a9": "HERCCULES result metadata",
     }
     return known_projects.get(_short_name(entity_id), _short_name(entity_id))

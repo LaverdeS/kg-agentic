@@ -28,7 +28,7 @@ test("recorded conversation keeps citation focus and public activity synchronize
   await page.getByLabel("Message the explorer").fill("What does this selected source establish?");
   await page.getByRole("button", { name: "Send message" }).click();
   await expect(page.getByText("Using 1 selected graph element").last()).toBeVisible();
-  await expect(page.getByText("Recorded walkthrough: this replays a fixed cited brief.").last()).toBeVisible();
+  await expect(page.getByText("Recorded example: this is the only recorded example").last()).toBeVisible();
   await expect
     .poll(() => page.evaluate(() => matchMedia("(prefers-reduced-motion: reduce)").matches))
     .toBe(true);
@@ -61,10 +61,9 @@ test("ordinary chat feels welcome and does not start an investigation", async ({
   await page.addInitScript(() => localStorage.setItem("kg-agentic-guide-dismissed", "true"));
   await page.goto("/");
 
-  await expect(page.getByText("Ask, orient, or explore")).toBeVisible();
-  await expect(page.getByText("I’ll tell you when I’m chatting, navigating, or retrieving evidence.")).toBeVisible();
-  await page.getByRole("button", { name: "Say hello" }).focus();
-  await page.keyboard.press("Enter");
+  await expect(page.getByText("Ask anything about this workspace or the decision.")).toBeVisible();
+  await expect(page.getByText("I’ll clearly say when I’m chatting, focusing the graph, or checking evidence.")).toBeVisible();
+  await page.getByLabel("Message the explorer").fill("Hello there");
   await page.getByRole("button", { name: "Send message" }).focus();
   await page.keyboard.press("Enter");
 
@@ -74,4 +73,23 @@ test("ordinary chat feels welcome and does not start an investigation", async ({
   await expect
     .poll(() => page.evaluate(() => matchMedia("(prefers-reduced-motion: reduce)").matches))
     .toBe(true);
+});
+
+test("structured evidence is shown only for an investigation and labels the recorded example", async ({ page }) => {
+  await page.addInitScript(() => localStorage.setItem("kg-agentic-guide-dismissed", "true"));
+  await page.goto("/");
+
+  await expect(page.getByText("No structured result yet")).toBeVisible();
+  await expect(page.getByText("SUPPORTED BRIEF")).not.toBeVisible();
+  await expect(page.getByText("RETRIEVED EVIDENCE")).not.toBeVisible();
+  await expect(page.getByRole("button", { name: "Compare CEMCAP / LEILAC2" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Decision gap" })).toBeVisible();
+
+  await page.getByLabel("Message the explorer").fill("Which CEMCAP evidence should I inspect first?");
+  await page.getByRole("button", { name: "Send message" }).click();
+
+  await expect(page.getByText("RECORDED EXAMPLE", { exact: true })).toBeVisible();
+  await expect(page.getByText("SUPPORTED BRIEF")).toBeVisible();
+  await expect(page.getByText("RETRIEVED EVIDENCE")).toBeVisible();
+  await expect(page.getByText("only recorded example")).toBeVisible();
 });

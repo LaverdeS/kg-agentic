@@ -9,6 +9,14 @@ const allKinds = ["project", "organization", "role", "output", "evidence", "enti
 const guidedQuestion = "Which CEMCAP evidence should I inspect first?";
 const guidedEvidenceId = "evidence:deliverable:cemcap-d4.5-v1:recorded";
 const guideStorageKey = "kg-agentic-guide-dismissed";
+const starterPrompts = [
+  { label: "What is this?", question: "What is this app?" },
+  { label: "Capture pathways", question: "Which cement carbon-capture approaches are represented in the inspected CEMCAP corpus, and what must a feasibility study still establish?" },
+  { label: "Capabilities and limits", question: "What does the inspected public corpus support about capabilities linked to CEMCAP, and what remains unverified?" },
+  { label: "Compare CEMCAP / LEILAC2", question: "Which CEMCAP and LEILAC2 evidence can be compared for a retrofit feasibility study, and which boundaries make a direct ranking unsafe?" },
+  { label: "Partner paths", question: "Which cross-project organisations are candidates for complementary validation work, and what evidence would change the shortlist?" },
+  { label: "Decision gap", question: "What decision-critical gap remains in the inspected public corpus for a cement retrofit shortlist, and how should it be validated?" },
+];
 
 function hasSameGraph(current: Scene, next: Pick<Scene, "nodes" | "edges">) {
   return current.nodes.length === next.nodes.length
@@ -67,6 +75,27 @@ function App() {
   );
   const indexNodes = search.trim() ? searchMatches : scene?.nodes ?? [];
   const messages = scene?.conversation?.messages ?? [];
+  const hasStructuredResult = scene?.conversation?.intent === "investigation";
+  const highlightedNodeIds = useMemo(() => {
+    const highlighted = new Set<string>();
+    if (!hasStructuredResult || !scene?.brief) return highlighted;
+    const statements = [
+      scene.brief.decision,
+      scene.brief.recommendation,
+      scene.brief.uncertainty,
+      scene.brief.next_action,
+      ...scene.brief.alternatives,
+      ...scene.brief.claims,
+    ];
+    for (const statement of statements) {
+      for (const citation of statement.citations) highlighted.add(`evidence:${citation.evidence_id}`);
+    }
+    for (const edge of scene.edges) {
+      if (highlighted.has(edge.source)) highlighted.add(edge.target);
+      if (highlighted.has(edge.target)) highlighted.add(edge.source);
+    }
+    return highlighted;
+  }, [hasStructuredResult, scene]);
 
   const select = useCallback((id: string) => {
     setSelectedId(id);
@@ -163,7 +192,7 @@ function App() {
             <div><span className="eyebrow">CURRENT DECISION</span><p>Evidence-led cement retrofit diligence</p></div>
             <button className="quiet" onClick={resetScene}>Reset scene</button>
           </div>
-          <GraphCanvas scene={scene} selectedId={selectedId} pinnedId={pinnedId} visibleKinds={visibleKinds} visibleRelationshipTypes={visibleRelationshipTypes} onSelect={select} />
+          <GraphCanvas scene={scene} selectedId={selectedId} pinnedId={pinnedId} visibleKinds={visibleKinds} visibleRelationshipTypes={visibleRelationshipTypes} highlightedNodeIds={highlightedNodeIds} onSelect={select} />
           <div className="graph-tools">
             <label>Search graph<input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Find evidence, project, organisation" /></label>
             {selected && <p className="selection-chip">Context: {selected.kind} · {selected.label}</p>}
@@ -181,27 +210,29 @@ function App() {
           </div>
         </div>
         <aside className="rail">
-          <section className="prompt-card">
-            <span className="eyebrow">START HERE</span><h2>Ask, orient, or explore</h2>
+          <section className="chat-shell">
+            <div className="chat-intro"><span className="eyebrow">CONVERSATION</span><h2>Ask anything about this workspace or the decision.</h2><p>I’ll clearly say when I’m chatting, focusing the graph, or checking evidence.</p></div>
+            <ConversationPanel messages={messages} />
+            <section className="prompt-card">
+            <span className="eyebrow">NEXT MESSAGE</span><h2>Continue the conversation</h2>
             <p className="prompt-intro">Use this workspace to connect a decision to its supporting research. I’ll tell you when I’m chatting, navigating, or retrieving evidence.</p>
             <label htmlFor="question">Message the explorer</label>
             <textarea id="question" value={question} onChange={(event) => setQuestion(event.target.value)} rows={3} placeholder="Try “What should I inspect first?” or simply say hello." />
-            <div className="prompt-suggestions" aria-label="Suggested messages"><button onClick={() => setQuestion("What is this app?")}>What is this?</button><button onClick={() => setQuestion("Focus CEMCAP D4.5")}>Focus key evidence</button><button onClick={() => setQuestion("Hello there")}>Say hello</button></div>
+            <div className="prompt-suggestions" aria-label="Suggested messages">{starterPrompts.map((prompt) => <button key={prompt.label} onClick={() => setQuestion(prompt.question)}>{prompt.label}</button>)}</div>
             <details className="run-settings"><summary>Evidence run settings</summary><fieldset className="mode-group"><legend>Investigation mode</legend><label className="mode"><input type="radio" name="mode" checked={mode === "recorded"} onChange={() => setMode("recorded")} /> Recorded walkthrough</label>
             <label className="mode"><input type="radio" name="mode" checked={mode === "live"} onChange={() => setMode("live")} /> Live core run</label></fieldset>
             <label className="as-of" htmlFor="as-of">Strict historical cutoff<input id="as-of" type="date" value={asOf} disabled={mode === "recorded"} onChange={(event) => setAsOf(event.target.value)} /></label></details>
             <button className="primary" disabled={state === "running"} onClick={() => void run()}>{state === "running" ? "Working…" : "Send message"}</button>
-            <p className="intent-hint">Decision questions retrieve evidence. Everyday chat and orientation stay in this local thread; graph requests only navigate what is already visible.</p>
+            <p className="intent-hint">Chat stays chat. Only a decision question opens a structured result. In Recorded mode, every evidence question replays the same clearly labelled CEMCAP example.</p>
             <button className="quiet reset-thread" onClick={resetThread}>Reset conversation</button>
             <p className="hint">Selection guides navigation, never evidence. Recorded mode replays a labelled current snapshot; live historical mode uses only cutoff-eligible evidence.</p>
+            </section>
           </section>
-          <ConversationPanel messages={messages} />
-          <section className="activity-card" aria-live="polite"><span className="eyebrow">PUBLIC ACTIVITY</span>
+          {scene.conversation && activities.length > 0 && <section className="activity-card" aria-live="polite"><span className="eyebrow">WHAT HAPPENED</span>
             {activities.map((trace, index) => <p key={`${trace.action}-${index}`}><b>{trace.action.replaceAll("_", " ")}</b>{trace.count !== undefined ? ` · ${trace.count}` : ""}{trace.detail ? ` · ${trace.detail}` : ""}</p>)}
-          </section>
+          </section>}
           {error && <section className="failure" role="alert">{error}</section>}
-          {scene.brief && <BriefPanel brief={scene.brief} onCitation={(citation) => select(`evidence:${citation.evidence_id}`)} />}
-          <EvidencePanel scene={scene} selectedId={selectedId} onSelect={select} />
+          {hasStructuredResult && scene.brief ? <section className="structured-result"><span className="eyebrow">{scene.mode === "recorded" ? "RECORDED EXAMPLE" : "STRUCTURED RESULT"}</span>{scene.mode === "recorded" && <p className="recorded-note">This is the only local example. It replays fixed CEMCAP evidence; it is not a new recommendation for this wording.</p>}<BriefPanel brief={scene.brief} onCitation={(citation) => select(`evidence:${citation.evidence_id}`)} /><EvidencePanel scene={scene} selectedId={selectedId} onSelect={select} /></section> : <section className="empty-result"><span className="eyebrow">NO STRUCTURED RESULT YET</span><p>Have a normal conversation, or ask a decision question when you want the graph, evidence, and recommendation to be shown together.</p></section>}
           <Details node={selected} pinned={pinnedId === selectedId} onPin={() => setPinnedId(pinnedId === selectedId ? null : selectedId)} />
           <GraphIndex nodes={indexNodes} search={search} selectedId={selectedId} onSelect={select} />
           <section className="gaps"><span className="eyebrow">LIMITS & GAPS</span>{scene.gaps.map((gap) => <p key={gap}>{gap}</p>)}</section>

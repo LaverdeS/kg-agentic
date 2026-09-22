@@ -21,12 +21,16 @@ def test_recorded_scene_preserves_source_qualified_graph_and_citations() -> None
     brief = cast(dict[str, object], payload["brief"])
     recommendation = cast(dict[str, object], brief["recommendation"])
     citations = cast(list[dict[str, object]], recommendation["citations"])
-    assert len(evidence) == 4
+    assert len(evidence) == 6
+    assert len(scene.nodes) >= 20
+    assert len(scene.edges) >= 22
     deliverable = next(
         item for item in evidence if item["sourceCategory"] == "public_deliverable_full_text"
     )
     assert "CEMCAP D4.5" in cast(str, deliverable["text"])
     assert "zenodo.org/records/2593240" in cast(str, deliverable["sourceUrl"])
+    metadata_only = [item for item in evidence if item["sourceCategory"] == "result_metadata"]
+    assert len(metadata_only) == 2
     assert cast(str, citations[0]["evidence_id"]).startswith(
         "publication:"
     )
@@ -86,6 +90,9 @@ def test_recorded_conversation_streams_public_stages_and_keeps_selected_context(
     ]
     assert events[-1]["data"]["conversation"]["threadId"] == "consultant-1"
     assert events[-1]["data"]["conversation"]["selectedNodeIds"] == request["selectedNodeIds"]
+    messages = events[-1]["data"]["conversation"]["messages"]
+    assert "only recorded example" in messages[-1]["content"]
+    assert "CEMCAP D4.5" in messages[-1]["content"]
 
 
 def test_recorded_conversation_rejects_a_historical_cutoff() -> None:

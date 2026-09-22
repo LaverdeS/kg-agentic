@@ -17,9 +17,11 @@ current-only recorded snapshot of the cement slice, for inspecting interaction
 and citation behavior without an API call. Editing its question changes the run
 context only; it does not claim to generate a new answer.
 
-The first-use rail makes the purpose and next action clear without requiring
-the optional **Quick guide**: users can chat, ask for orientation, focus a
-visible source, or start an evidence investigation. The guide still introduces
+The first-use rail behaves like a familiar chat: past messages are above the
+composer, and structured graph/evidence results appear only after an
+investigation. Users can chat, ask for orientation, focus a visible source, or
+start an evidence investigation without requiring the optional **Quick guide**.
+The guide still introduces
 the intended two-minute journey—start a recorded question, follow the public
 activity, inspect the amber CEMCAP D4.5 citation, then ask a follow-up—and can
 be dismissed or reopened from **Guide** in the header. Ordinary casual turns
@@ -39,9 +41,12 @@ evidence; live historical questions still enforce the core's strict
 cutoff-eligibility policy. If EURIO, Neo4j, or the model is unavailable, the
 route sends a failure event instead of substituting the recorded snapshot.
 
-The recorded scene now includes the source-qualified CEMCAP D4.5 full-text
-deliverable as distinct from project records, metadata-only results, and the
-ammonia publication. It remains a current-only UI fixture: it cannot answer a
+The recorded scene now projects the entire inspected local seed: three CORDIS
+projects, six organisation-role paths, five catalogue outputs, and six
+source-labelled records (including CEMCAP D4.5 full text, the ammonia
+publication, and clearly marked metadata-only records). It is a richer graph
+and tool-testing fixture, not a general corpus: Recorded mode replays one fixed
+CEMCAP recommendation regardless of question wording. It cannot answer a
 historical question or claim a newly generated recommendation.
 
 ## Renderer decision
