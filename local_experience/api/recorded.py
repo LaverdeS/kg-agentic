@@ -8,9 +8,9 @@ investigation.  Live mode below calls the existing application composition.
 from datetime import UTC, datetime
 
 from kg_agentic.application.cement import (
+    CEMCAP_AMMONIA_PUBLICATION,
     CORPUS_ID,
     CURRENT_QUESTION,
-    PUBLIC_EVIDENCE,
     SEED_PROJECTS,
 )
 from kg_agentic.knowledge.models import (
@@ -79,15 +79,15 @@ def recorded_result() -> InvestigationResult:
             id="publication:perez-calvo-2018:recorded",
             corpus_id=CORPUS_ID,
             kind=EvidenceKind.SOURCE_CLAIM,
-            text=PUBLIC_EVIDENCE[0].text,
-            source_url=PUBLIC_EVIDENCE[0].source_url,
-            source_category=PUBLIC_EVIDENCE[0].source_category,
+            text=CEMCAP_AMMONIA_PUBLICATION.text,
+            source_url=CEMCAP_AMMONIA_PUBLICATION.source_url,
+            source_category=CEMCAP_AMMONIA_PUBLICATION.source_category,
             content_hash="recorded:perez-calvo-2018",
             retrieved_at=retrieved_at,
             published_at=None,
             event_at=None,
-            passage=PUBLIC_EVIDENCE[0].passage,
-            canonical_entity_iris=PUBLIC_EVIDENCE[0].canonical_entity_iris,
+            passage=CEMCAP_AMMONIA_PUBLICATION.passage,
+            canonical_entity_iris=CEMCAP_AMMONIA_PUBLICATION.canonical_entity_iris,
             publication_year=2018,
             publication_precision="year",
         ),

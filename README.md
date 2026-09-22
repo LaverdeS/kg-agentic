@@ -36,8 +36,8 @@ The first niche is cement carbon-capture retrofit diligence: helping a producer'
 ## Current vertical slice
 
 The repository now contains a bounded end-to-end investigation path for that niche. It queries
-live EURIO relationships, ingests source-qualified CORDIS project/result records plus one
-versioned public publication into Graphiti on
+live EURIO relationships, ingests source-qualified CORDIS project/result records plus reviewed,
+versioned public deliverable and publication text into Graphiti on
 Neo4j, retrieves both structural paths and semantic evidence, and asks an OpenAI model for a
 structured brief. A support gate removes every material generated claim that cannot be resolved to
 retrieved evidence with an HTTP citation. If paths, evidence, or supported claims are missing, the
@@ -47,8 +47,11 @@ This is deliberately a current-evidence slice. Historical `--as-of` requests are
 retrieval because reliable publication-time eligibility is not yet available for all selected
 CORDIS records. The seed corpus is also intentionally small: three project records and at most two
 result records per project for CEMCAP (`641185`), LEILAC2 (`884170`), and HERCCULES (`101096691`),
-plus a reviewed passage from one public CEMCAP-linked publication. Result metadata remains
-distinct from full-text evidence; the currently unavailable CEMCAP D4.5 deliverable is not ingested.
+plus reviewed passages from a versioned public CEMCAP D4.5 deliverable and a CEMCAP-linked
+publication. This demonstrates all four source categories while retaining result metadata as
+distinct from full-text evidence. D4.5 supports a technical retrofitability comparison, not an
+economic ranking or supplier qualification; project participation likewise identifies candidates
+for validation rather than proved capabilities.
 
 ## Run locally
 

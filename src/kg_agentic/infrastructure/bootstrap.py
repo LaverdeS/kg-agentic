@@ -21,7 +21,7 @@ from kg_agentic.knowledge.models import InvestigationRequest, InvestigationResul
 
 
 async def ingest_cement_slice(settings: Settings) -> IngestionReport:
-    """Ingest the fixed seed corpus and its one verified public publication."""
+    """Ingest the fixed seed corpus and its reviewed public deliverable and publication."""
     runtime = build_runtime(settings)
     try:
         await runtime.graphiti.build_indices_and_constraints()

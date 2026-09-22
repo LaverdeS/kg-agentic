@@ -1,26 +1,62 @@
 [
   {
-    "id": "cement-current-1",
-    "question": "Which capture pathways and complementary partners should a cement producer shortlist for a site-specific retrofit feasibility study, and which reported comparisons have incompatible capture, utility, or cost boundaries?",
+    "id": "cement-landscape-1",
+    "question": "Which cement carbon-capture approaches are represented in the inspected CEMCAP corpus, and what must a feasibility study still establish?",
+    "as_of": null,
+    "reference_identifiers": ["641185", "10.5281/zenodo.2593240", "10.3303/CET1869025"],
+    "reference_paths": ["CEMCAP project -> hasResult -> D4.5 deliverable", "CEMCAP project -> hasResult -> ammonia publication"],
+    "acceptable_support": ["D4.5 technical retrofitability criteria", "Publication passage limited to pilot tests and rate-based modelling"],
+    "abstain_when": ["Asked to declare a technology commercially proven from the retained corpus"],
+    "invalid_citation_case": "A claim citing result metadata as though it were full-text performance evidence"
+  },
+  {
+    "id": "cement-capability-1",
+    "question": "What does the inspected public corpus support about capabilities linked to CEMCAP, and what remains unverified?",
+    "as_of": null,
+    "reference_identifiers": ["641185", "10.3303/CET1869025"],
+    "reference_paths": ["CEMCAP project -> hasInvolvedParty -> organisation role -> organisation", "CEMCAP project -> hasResult -> ammonia publication"],
+    "acceptable_support": ["Pilot-test scope from the publication", "EURIO role as involvement only"],
+    "abstain_when": ["Asked to treat a participant or author affiliation as supplier qualification or full-scale capability"],
+    "invalid_citation_case": "A capability claim supported only by a project objective or participation relationship"
+  },
+  {
+    "id": "cement-comparables-1",
+    "question": "Which CEMCAP and LEILAC2 evidence can be compared for a retrofit feasibility study, and which boundaries make a direct ranking unsafe?",
+    "as_of": null,
+    "reference_identifiers": ["641185", "884170"],
+    "reference_paths": ["CEMCAP project -> hasResult -> D4.5 deliverable", "LEILAC2 project -> hasResult -> EURIO result metadata"],
+    "acceptable_support": ["D4.5 excludes economic ranking", "Result metadata is labelled metadata-only"],
+    "abstain_when": ["Asked for a cheapest option without normalised capture, utility, and cost assumptions"],
+    "invalid_citation_case": "An economic ranking cited solely to D4.5 technical-comparison text"
+  },
+  {
+    "id": "cement-partners-1",
+    "question": "Which cross-project organisations are candidates for complementary validation work, and what evidence would change the shortlist?",
     "as_of": null,
     "reference_identifiers": ["641185", "884170", "101096691"],
-    "acceptable_support": [
-      "A canonical EURIO organisation-project-result path",
-      "Corpus-scoped Graphiti evidence with a resolvable source URL"
-    ],
-    "abstain_when": [
-      "Asked for a cheapest technology without site assumptions",
-      "Evidence contains objectives but no demonstrated outcome"
-    ]
+    "reference_paths": ["CEMCAP -> organisation role -> LEAP", "LEILAC2 -> organisation role -> LEAP", "HERCCULES -> organisation role -> LEAP", "CEMCAP -> organisation role -> POLIMI"],
+    "acceptable_support": ["Typed, directed EURIO involvement roles", "A next action requesting current, site-relevant capability evidence"],
+    "abstain_when": ["Asked to recommend a supplier based only on cross-project participation"],
+    "invalid_citation_case": "A partner capability claim without a cited source passage or path"
+  },
+  {
+    "id": "cement-gap-1",
+    "question": "What decision-critical gap remains in the inspected public corpus for a cement retrofit shortlist, and how should it be validated?",
+    "as_of": null,
+    "reference_identifiers": ["641185", "884170", "101096691"],
+    "reference_paths": ["Configured three-project EURIO seed corpus"],
+    "acceptable_support": ["A corpus-scoped gap statement", "A concrete request for site utilities, boundary assumptions, or demonstrated operating evidence"],
+    "abstain_when": ["Asked to claim no organisation has a capability because it is absent from the inspected public corpus"],
+    "invalid_citation_case": "An absence claim presented as evidence of real-world non-existence"
   },
   {
     "id": "cement-historical-1",
     "question": "What pilot-scale ammonia-capture evidence was public by the end of 2018?",
     "as_of": "2018-12-31",
     "reference_identifiers": ["10.3303/CET1869025", "641185"],
+    "reference_paths": ["CEMCAP project -> hasResult -> ammonia publication"],
     "acceptable_support": [],
-    "abstain_when": [
-      "Always in this increment: historical eligibility is not implemented"
-    ]
+    "abstain_when": ["Always in this increment: historical eligibility is not implemented"],
+    "invalid_citation_case": "Current EURIO roles or year-precision deliverable data offered as support for an intra-year cutoff"
   }
 ]
