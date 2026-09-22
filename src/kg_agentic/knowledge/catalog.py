@@ -13,6 +13,8 @@ class EvidenceCatalog(Protocol):
 
     async def items(self, *, corpus_id: str) -> tuple[EvidenceItem, ...]: ...
 
+    async def latest(self, *, corpus_id: str, source_id: str) -> EvidenceItem | None: ...
+
 
 class JsonEvidenceCatalog:
     """Small durable, source-version catalog for historical retrieval without graph state."""
@@ -36,6 +38,14 @@ class JsonEvidenceCatalog:
 
     async def items(self, *, corpus_id: str) -> tuple[EvidenceItem, ...]:
         return tuple(item for item in self._read() if item.corpus_id == corpus_id)
+
+    async def latest(self, *, corpus_id: str, source_id: str) -> EvidenceItem | None:
+        matches = [
+            item
+            for item in await self.items(corpus_id=corpus_id)
+            if item.source_id == source_id
+        ]
+        return max(matches, key=lambda item: item.ingested_at or item.retrieved_at, default=None)
 
     def _read(self) -> list[EvidenceItem]:
         if not self._path.exists():
@@ -69,6 +79,9 @@ def _item(value: object) -> EvidenceItem:
             ingested_at=_maybe_date(value.get("ingested_at")),
             publication_year=value.get("publication_year"),
             publication_precision=value.get("publication_precision"),
+            source_id=_maybe_string(value.get("source_id")),
+            supersedes_id=_maybe_string(value.get("supersedes_id")),
+            contradicts_ids=tuple(str(item) for item in value.get("contradicts_ids", [])),
         )
     except (KeyError, TypeError, ValueError) as error:
         raise ValueError("Invalid evidence catalog entry") from error

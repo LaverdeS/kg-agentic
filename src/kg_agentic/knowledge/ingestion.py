@@ -120,6 +120,14 @@ class IngestionPipeline:
                 f"{document.dataset_id}:{document.corpus_id}:{document.source_id}:{content_hash}"
             )
             version_ids.append(version_id)
+            prior = (
+                await self._evidence_catalog.latest(
+                    corpus_id=f"{document.dataset_id}:{document.corpus_id}",
+                    source_id=document.source_id,
+                )
+                if self._evidence_catalog is not None
+                else None
+            )
             item = EvidenceItem(
                 id=version_id,
                 corpus_id=f"{document.dataset_id}:{document.corpus_id}",
@@ -137,6 +145,9 @@ class IngestionPipeline:
                 ingested_at=datetime.now(UTC),
                 publication_year=document.publication_year,
                 publication_precision=document.publication_precision,
+                source_id=document.source_id,
+                supersedes_id=prior.id if prior is not None else None,
+                contradicts_ids=document.contradicts_ids,
             )
             if self._evidence_catalog is not None:
                 await self._evidence_catalog.add(item)

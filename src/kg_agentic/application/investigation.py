@@ -130,6 +130,18 @@ class InvestigationAgent:
             evidence=evidence,
         )
         brief, gaps = _resolve_supported_claims(draft, evidence, as_of=request.as_of)
+        evidence_ids = {item.id for item in evidence}
+        conflicts = tuple(
+            item.id
+            for item in evidence
+            if any(conflict_id in evidence_ids for conflict_id in item.contradicts_ids)
+        )
+        if conflicts:
+            gaps = (
+                *gaps,
+                "Conflicting source versions were retrieved and remain unresolved: "
+                + ", ".join(conflicts),
+            )
         if request.as_of is not None and not paths:
             gaps = (
                 "No organization-project-output path had dated public availability by the cutoff; "
@@ -216,27 +228,37 @@ def compare_investigations(
     earlier_as_of: datetime,
     later: InvestigationResult,
     later_as_of: datetime,
+    earlier_eligible_evidence: tuple[EvidenceItem, ...],
+    later_eligible_evidence: tuple[EvidenceItem, ...],
 ) -> InvestigationComparison:
-    """Attribute two historical result differences to retrieved source versions, not inference."""
+    """Compare full cutoff-eligible source versions independently of retrieval rank."""
     if later_as_of <= earlier_as_of:
         raise ValueError("later_as_of must be after earlier_as_of")
 
     earlier_by_id = {item.id: item for item in earlier.evidence}
     later_by_id = {item.id: item for item in later.evidence}
+    earlier_eligible_by_id = {item.id: item for item in earlier_eligible_evidence}
+    later_eligible_by_id = {item.id: item for item in later_eligible_evidence}
+    newly_eligible = tuple(
+        item for item in later_eligible_evidence if item.id not in earlier_eligible_by_id
+    )
+    no_longer_eligible = tuple(
+        item for item in earlier_eligible_evidence if item.id not in later_eligible_by_id
+    )
     later_only = tuple(item for item in later.evidence if item.id not in earlier_by_id)
     no_longer_retrieved = tuple(item for item in earlier.evidence if item.id not in later_by_id)
     changes = tuple(
         [
-            f"Evidence retrieved only in the later result, not proof it became newly eligible: "
+            f"Newly eligible source version: "
             f"{item.id} ({item.source_url}; {item.content_hash})."
-            for item in later_only
+            for item in newly_eligible
         ]
         + [
             (
                 f"No longer retrieved as eligible evidence: {item.id} ({item.source_url}; "
                 f"{item.content_hash})."
             )
-            for item in no_longer_retrieved
+            for item in no_longer_eligible
         ]
         or ["No retrieved eligible evidence changed between the two cutoffs."]
     )
@@ -245,6 +267,8 @@ def compare_investigations(
         earlier=earlier,
         later_as_of=later_as_of,
         later=later,
+        newly_eligible_evidence=newly_eligible,
+        no_longer_eligible_evidence=no_longer_eligible,
         later_only_retrieved_evidence=later_only,
         no_longer_retrieved_evidence=no_longer_retrieved,
         changes=changes,

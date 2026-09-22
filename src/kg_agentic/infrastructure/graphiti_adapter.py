@@ -120,6 +120,9 @@ def _to_payload(item: EvidenceItem) -> dict[str, object]:
         "ingested_at": _iso(item.ingested_at),
         "publication_year": item.publication_year,
         "publication_precision": item.publication_precision,
+        "source_id": item.source_id,
+        "supersedes_id": item.supersedes_id,
+        "contradicts_ids": list(item.contradicts_ids),
     }
 
 
@@ -149,6 +152,9 @@ def _from_payload(payload: object) -> EvidenceItem:
             ingested_at=_optional_datetime(payload.get("ingested_at")),
             publication_year=_optional_int(payload.get("publication_year")),
             publication_precision=_optional_year_precision(payload.get("publication_precision")),
+            source_id=_optional_string(payload.get("source_id")),
+            supersedes_id=_optional_string(payload.get("supersedes_id")),
+            contradicts_ids=_optional_strings(payload.get("contradicts_ids")),
         )
     except (KeyError, TypeError, ValueError) as error:
         raise ValueError("Invalid Graphiti evidence episode") from error
@@ -180,6 +186,14 @@ def _optional_int(value: object) -> int | None:
     if not isinstance(value, int):
         raise ValueError("integer or null is required")
     return value
+
+
+def _optional_strings(value: object) -> tuple[str, ...]:
+    if value is None:
+        return ()
+    if not isinstance(value, list) or not all(isinstance(item, str) for item in value):
+        raise ValueError("list of strings or null is required")
+    return tuple(value)
 
 
 def _optional_year_precision(value: object) -> Literal["year"] | None:

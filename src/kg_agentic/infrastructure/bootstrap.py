@@ -25,6 +25,7 @@ from kg_agentic.knowledge.models import (
     InvestigationRequest,
     InvestigationResult,
 )
+from kg_agentic.knowledge.temporal import is_evidence_public_by
 
 
 async def ingest_cement_slice(settings: Settings) -> IngestionReport:
@@ -93,12 +94,20 @@ async def compare_cement_slice(
     later, later_usage = await investigate_cement_slice(
         settings, InvestigationRequest(question=question, as_of=later_as_of)
     )
+    catalog = JsonEvidenceCatalog(settings.data_dir / "cordis-eurio" / CORPUS_ID / "evidence.json")
+    catalog_items = await catalog.items(corpus_id=GROUP_ID)
     return (
         compare_investigations(
             earlier=earlier,
             earlier_as_of=earlier_as_of,
             later=later,
             later_as_of=later_as_of,
+            earlier_eligible_evidence=tuple(
+                item for item in catalog_items if is_evidence_public_by(item, earlier_as_of)
+            ),
+            later_eligible_evidence=tuple(
+                item for item in catalog_items if is_evidence_public_by(item, later_as_of)
+            ),
         ),
         _sum_usage(earlier_usage, later_usage),
     )

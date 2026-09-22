@@ -50,6 +50,9 @@ class EvidenceItem:
     ingested_at: datetime | None = None
     publication_year: int | None = None
     publication_precision: Literal["year"] | None = None
+    source_id: str | None = None
+    supersedes_id: str | None = None
+    contradicts_ids: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -70,6 +73,7 @@ class SourceDocument:
     raw_payload: bytes | None = None
     publication_year: int | None = None
     publication_precision: Literal["year"] | None = None
+    contradicts_ids: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -160,6 +164,8 @@ class InvestigationComparison:
     earlier: InvestigationResult
     later_as_of: datetime
     later: InvestigationResult
+    newly_eligible_evidence: tuple[EvidenceItem, ...]
+    no_longer_eligible_evidence: tuple[EvidenceItem, ...]
     later_only_retrieved_evidence: tuple[EvidenceItem, ...]
     no_longer_retrieved_evidence: tuple[EvidenceItem, ...]
     changes: tuple[str, ...]

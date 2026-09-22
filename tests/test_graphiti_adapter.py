@@ -41,6 +41,9 @@ class RecordedEvidenceCatalog:
     async def items(self, *, corpus_id):
         return tuple(item for item in self._items if item.corpus_id == corpus_id)
 
+    async def latest(self, *, corpus_id, source_id):
+        return None
+
 
 def evidence_item() -> EvidenceItem:
     return EvidenceItem(

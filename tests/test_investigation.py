@@ -307,6 +307,8 @@ async def test_comparison_attributes_newly_eligible_evidence_to_its_source_versi
         earlier_as_of=datetime(2025, 1, 1, tzinfo=UTC),
         later=later,
         later_as_of=datetime(2027, 1, 1, tzinfo=UTC),
+        earlier_eligible_evidence=earlier.evidence,
+        later_eligible_evidence=later.evidence,
     )
 
     assert tuple(item.id for item in comparison.later_only_retrieved_evidence) == ("future",)
