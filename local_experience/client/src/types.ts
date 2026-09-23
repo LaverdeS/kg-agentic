@@ -81,7 +81,7 @@ export interface Conversation {
 export interface Scene {
   question: string;
   status: string;
-  mode: "recorded" | "live";
+  mode: "live";
   nodes: SceneNode[];
   edges: SceneEdge[];
   evidence: Evidence[];

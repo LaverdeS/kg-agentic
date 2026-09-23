@@ -1,4 +1,9 @@
-"""Bounded, in-memory conversation orchestration for the optional explorer."""
+"""Live, tool-oriented conversation orchestration for the optional explorer.
+
+The explorer intentionally keeps no graph snapshot. Browser message history is
+checkpointed locally, while each investigation invokes the core composition
+again and projects only that run's returned paths and evidence.
+"""
 
 from __future__ import annotations
 
@@ -7,19 +12,37 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Annotated, Literal, TypedDict, cast
 
-from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.graph import START, StateGraph
+
+SYSTEM_PROMPT = """You help turn European research relationships and dated public
+sources into decisions people can inspect. Use a live tool before answering. Keep
+structural relationships separate from source claims, make uncertainty explicit,
+and never turn project participation, objectives, or missing data into proof."""
+
+TEST_TASKS = (
+    "Compare CEMCAP and LEILAC2 for a retrofit decision; name the unsafe assumptions.",
+    "Find evidence that would support or rule out an oxyfuel retrofit pathway.",
+    "Identify partners worth validating for complementary capture work and the evidence needed.",
+    "Surface the decision-critical gap in a cement retrofit shortlist and a next validation step.",
+    "Ask what the currently retrieved public sources establish versus what remains unverified.",
+    "Run the same question with a strict historical date and inspect the abstention or gaps.",
+)
+
+Intent = Literal["investigation", "help", "conversation"]
+SceneLoader = Callable[[str, str | None], dict[str, object]]
+RuntimeChecker = Callable[[], dict[str, object]]
+TaskRecommender = Callable[[], tuple[str, ...]]
 
 
 class ConversationState(TypedDict, total=False):
     question: str
     query: str
-    mode: Literal["recorded", "live"]
     selected_node_ids: list[str]
     as_of: str | None
-    intent: Literal["investigation", "help", "navigation", "conversation"]
-    navigation_target: str | None
+    intent: Intent
     scene: dict[str, object]
+    runtime: dict[str, object]
+    tasks: tuple[str, ...]
     history: Annotated[list[dict[str, str]], operator.add]
 
 
@@ -27,7 +50,6 @@ class ConversationState(TypedDict, total=False):
 class ConversationRequest:
     thread_id: str
     question: str
-    mode: Literal["recorded", "live"]
     selected_node_ids: tuple[str, ...] = ()
     as_of: str | None = None
 
@@ -38,39 +60,39 @@ class ConversationRun:
     scene: dict[str, object]
 
 
-SceneLoader = Callable[[str, Literal["recorded", "live"], str | None], dict[str, object]]
-SceneSnapshot = Callable[[], dict[str, object]]
-
-
 class ConversationRunner:
-    """Retain only one local browser thread's public conversation context."""
+    """A LangGraph agent that acts through three explicitly bound live tools.
 
-    def __init__(self, load_scene: SceneLoader, snapshot_scene: SceneSnapshot) -> None:
-        self._load_scene = load_scene
-        self._snapshot_scene = snapshot_scene
-        self._memory = InMemorySaver()
+    The policy is intentionally bounded rather than an unconstrained second LLM:
+    the existing core agent is the authority for retrieval and the supported
+    recommendation. This wrapper chooses a tool, preserves chat text, and never
+    reuses a former scene as evidence.
+    """
+
+    tool_names = ("check_live_services", "recommend_test_tasks", "investigate_live_graph")
+
+    def __init__(
+        self,
+        investigate_live_graph: SceneLoader,
+        check_live_services: RuntimeChecker,
+        recommend_test_tasks: TaskRecommender,
+    ) -> None:
+        self._investigate_live_graph = investigate_live_graph
+        self._check_live_services = check_live_services
+        self._recommend_test_tasks = recommend_test_tasks
+        self._history_by_thread: dict[str, list[dict[str, str]]] = {}
         workflow = StateGraph(ConversationState)
-        workflow.add_node("plan", self._plan)
-        workflow.add_node("retrieve", self._retrieve)
-        workflow.add_node("support", self._support)
-        workflow.add_node("help", self._help)
-        workflow.add_node("navigate", self._navigate)
-        workflow.add_node("converse", self._converse)
-        workflow.add_edge(START, "plan")
-        workflow.add_conditional_edges(
-            "plan",
-            lambda state: cast(
-                Literal["investigation", "help", "navigation", "conversation"], state["intent"]
-            ),
-            {
-                "investigation": "retrieve",
-                "help": "help",
-                "navigation": "navigate",
-                "conversation": "converse",
-            },
-        )
-        workflow.add_edge("retrieve", "support")
-        self._graph = workflow.compile(checkpointer=self._memory)
+        workflow.add_node("reason", self._reason)
+        workflow.add_node("act", self._act)
+        workflow.add_node("respond", self._respond)
+        workflow.add_edge(START, "reason")
+        workflow.add_edge("reason", "act")
+        workflow.add_edge("act", "respond")
+        self._graph = workflow.compile()
+
+    @property
+    def tool_count(self) -> int:
+        return len(self.tool_names)
 
     def run(self, request: ConversationRequest) -> ConversationRun:
         question = request.question.strip()
@@ -78,35 +100,20 @@ class ConversationRunner:
             raise ValueError("question must be a non-empty string")
         if not request.thread_id.strip():
             raise ValueError("threadId must be a non-empty string")
-        if request.mode == "recorded" and request.as_of is not None:
-            raise ValueError("An asOf date requires a live investigation.")
 
         state = cast(
             ConversationState,
             self._graph.invoke(
                 {
                     "question": question,
-                    "mode": request.mode,
                     "selected_node_ids": list(request.selected_node_ids),
                     "as_of": request.as_of,
+                    "history": self._history_by_thread.get(request.thread_id, []),
                 },
-                {"configurable": {"thread_id": request.thread_id}},
             ),
         )
+        intent = cast(Intent, state.get("intent"))
         scene = dict(cast(dict[str, object], state.get("scene")))
-        intent = cast(
-            Literal["investigation", "help", "navigation", "conversation"], state.get("intent")
-        )
-        node_ids = {
-            cast(str, node["id"])
-            for node in cast(list[dict[str, object]], scene["nodes"])
-        }
-        unknown_selection = set(request.selected_node_ids) - node_ids
-        if intent == "investigation" and unknown_selection:
-            raise ValueError(
-                "Selected graph context must refer to an element in this investigation."
-            )
-
         scene["question"] = question
         scene["conversation"] = {
             "threadId": request.thread_id,
@@ -114,186 +121,102 @@ class ConversationRunner:
             "messages": state.get("history", [])[-8:],
             "asOf": request.as_of,
             "intent": intent,
-            "navigationTarget": state.get("navigation_target"),
         }
-        return ConversationRun(events=self._events(scene, request), scene=scene)
+        self._history_by_thread[request.thread_id] = cast(
+            list[dict[str, str]], state.get("history", [])[-8:]
+        )
+        return ConversationRun(events=self._events(scene, intent), scene=scene)
 
     @staticmethod
     def public_activity(request: ConversationRequest) -> dict[str, str]:
         intent = _intent(request.question)
-        if intent == "help":
-            return {
-                "action": "oriented",
-                "detail": "Explaining the local explorer without starting retrieval.",
-            }
-        if intent == "navigation":
-            return {
-                "action": "navigated",
-                "detail": "Focusing the requested graph context without retrieval.",
-            }
-        if intent == "conversation":
-            return {
-                "action": "conversed",
-                "detail": "Staying in the local conversation; no evidence retrieval started.",
-            }
         return {
-            "action": "planned",
+            "action": "planned" if intent == "investigation" else "checked_live_services",
             "detail": (
-                f"Using {len(request.selected_node_ids)} selected graph element(s) as navigation "
-                "context."
-                if request.selected_node_ids
-                else "Starting a bounded investigation."
+                "Starting a new live graph investigation. No previous result will be reused."
+                if intent == "investigation"
+                else "Checking the live workspace before replying; no graph result is seeded."
             ),
         }
 
     def reset(self, thread_id: str) -> None:
         if not thread_id.strip():
             raise ValueError("threadId must be a non-empty string")
-        self._memory.delete_thread(thread_id)
+        self._history_by_thread.pop(thread_id, None)
 
-    def _plan(self, state: ConversationState) -> ConversationState:
+    def _reason(self, state: ConversationState) -> ConversationState:
         question = cast(str, state.get("question"))
         intent = _intent(question)
-        if intent in {"help", "conversation"}:
-            return {
-                "intent": intent,
-                "history": [{"role": "user", "content": question}],
-            }
-        if intent == "navigation":
-            return {
-                "intent": intent,
-                "navigation_target": _navigation_target(question),
-                "history": [{"role": "user", "content": question}],
-            }
+        if intent != "investigation":
+            return {"intent": intent, "history": [{"role": "user", "content": question}]}
+
         previous_questions = [
             message["content"]
             for message in state.get("history", [])
             if message["role"] == "user"
         ]
-        context: list[str] = []
+        context = [SYSTEM_PROMPT]
         if previous_questions:
-            context.append(
-                f"Earlier conversation question (not evidence): {previous_questions[-1]}"
-            )
+            context.append(f"Earlier question for context only: {previous_questions[-1]}")
         if state.get("selected_node_ids"):
             selected = ", ".join(cast(list[str], state.get("selected_node_ids")))
-            context.append(f"Selected graph context (not evidence): {selected}")
-        query = "\n".join([*context, f"Current question: {question}"])
+            context.append(f"Selected UI context, not evidence: {selected}")
+        context.append(f"Current user question: {question}")
         return {
             "intent": intent,
-            "query": query,
+            "query": "\n\n".join(context),
             "history": [{"role": "user", "content": question}],
         }
 
-    def _retrieve(self, state: ConversationState) -> ConversationState:
-        return {
-            "scene": self._load_scene(
-                cast(str, state.get("query")),
-                cast(Literal["recorded", "live"], state.get("mode")),
-                state.get("as_of"),
-            )
-        }
+    def _act(self, state: ConversationState) -> ConversationState:
+        intent = cast(Intent, state.get("intent"))
+        if intent == "investigation":
+            return {
+                "scene": self._investigate_live_graph(
+                    cast(str, state.get("query")), state.get("as_of")
+                )
+            }
+        runtime = self._check_live_services()
+        tasks = self._recommend_test_tasks()
+        return {"runtime": runtime, "tasks": tasks, "scene": _empty_scene()}
 
-    def _support(self, state: ConversationState) -> ConversationState:
-        scene = cast(dict[str, object], state.get("scene"))
-        brief = cast(dict[str, object] | None, scene.get("brief"))
-        if state.get("mode") == "recorded":
-            summary = (
-                "Recorded example: this is the only recorded example in this local build, so it "
-                "replays the same fixed CEMCAP evidence rather than creating a recommendation "
-                "from your exact wording. I recommend starting with CEMCAP D4.5: it explains the "
-                "retrofit criteria and what the example cannot prove. Use Live mode for a new "
-                "investigation when its services are configured."
-            )
-        elif brief is None:
-            summary = "The investigation abstained; inspect the recorded gaps before continuing."
-        else:
-            recommendation = cast(dict[str, object], brief["recommendation"])
-            summary = cast(str, recommendation["text"])
-        return {"history": [{"role": "assistant", "content": summary}]}
+    def _respond(self, state: ConversationState) -> ConversationState:
+        intent = cast(Intent, state.get("intent"))
+        if intent == "investigation":
+            scene = cast(dict[str, object], state.get("scene"))
+            brief = cast(dict[str, object] | None, scene.get("brief"))
+            if brief is None:
+                response = (
+                    "I checked the live graph, but it could not support a full recommendation. "
+                    "The gaps below show what to validate next."
+                )
+            else:
+                recommendation = cast(dict[str, object], brief["recommendation"])
+                response = cast(str, recommendation["text"])
+            return {"history": [{"role": "assistant", "content": response}]}
 
-    def _help(self, state: ConversationState) -> ConversationState:
-        return {
-            "scene": self._snapshot_scene(),
-            "history": [
-                {
-                    "role": "assistant",
-                    "content": (
-                        "This workspace helps you examine the research behind a cement-retrofit "
-                        "decision. The graph shows the projects and sources in the current "
-                        "working set; this rail lets you inspect the evidence behind a claim. "
-                        "Recorded mode replays a fixed current snapshot. Live mode can run a "
-                        "bounded investigation against configured services. This answer does "
-                        "not search or change the graph. "
-                        "Ask a decision question for evidence, or select an element to focus it."
-                    ),
-                }
-            ],
-        }
-
-    def _navigate(self, state: ConversationState) -> ConversationState:
-        target = cast(str | None, state.get("navigation_target"))
-        summary = (
-            "Focused the CEMCAP D4.5 deliverable and its immediate supporting neighborhood. "
-            "This is navigation only: no evidence was retrieved or added."
-            if target
-            else (
-                "This is navigation only: use the graph search or filters to choose a graph "
-                "element; no evidence was retrieved or added."
-            )
-        )
-        return {
-            "scene": self._snapshot_scene(),
-            "history": [{"role": "assistant", "content": summary}],
-        }
-
-    def _converse(self, state: ConversationState) -> ConversationState:
-        question = cast(str, state.get("question"))
-        normalized = question.lower().strip(" !?.")
-        if "recap" in normalized or "what did we discuss" in normalized:
-            prior_questions = [
-                message["content"]
-                for message in state.get("history", [])
-                if message["role"] == "user" and message["content"] != question
-            ]
+        runtime = cast(dict[str, object], state.get("runtime"))
+        tasks = cast(tuple[str, ...], state.get("tasks"))
+        if intent == "help":
             response = (
-                f"So far, you asked: {prior_questions[-1]}. I can keep chatting, focus a visible "
-                "source, or start an evidence investigation when you are ready. "
-                "No evidence retrieval has started."
-                if prior_questions
-                else "We have not explored a question yet. I can chat, orient you, focus a visible "
-                "source, or start an evidence investigation. No evidence retrieval has started."
-            )
-        elif normalized.startswith(("thanks", "thank you", "cheers")):
-            response = (
-                "You’re welcome. When you’re ready, I can explain the workspace, focus a graph "
-                "element, or start a bounded evidence investigation. "
-                "No evidence retrieval has started."
-            )
-        elif normalized in {"how are you", "how are things"}:
-            response = (
-                "I’m ready to help you inspect this local evidence workspace. I can chat, orient "
-                "you, navigate the visible graph, or retrieve evidence when you ask a decision "
-                "question. No evidence retrieval has started."
+                "I use live tools, not a recorded example. Ask a decision question and I will "
+                "run the graph, then show only the returned paths, sources, and supported brief. "
+                f"Live service check: {runtime['summary']}. Try one of these: "
+                + " ".join(f"{index + 1}. {task}" for index, task in enumerate(tasks[:5]))
             )
         else:
             response = (
-                "Hello — I’m your local evidence-exploration guide. We can talk through the "
-                "workspace, focus a visible source, or investigate a cement-retrofit decision. "
-                "No evidence retrieval has started."
+                "I’m ready. I checked the live workspace and will not reuse an old graph result. "
+                f"{runtime['summary']} Ask a decision question, or try: {tasks[0]}"
             )
-        return {
-            "scene": self._snapshot_scene(),
-            "history": [{"role": "assistant", "content": response}],
-        }
+        return {"history": [{"role": "assistant", "content": response}]}
 
     @staticmethod
     def _events(
-        scene: dict[str, object], request: ConversationRequest
+        scene: dict[str, object], intent: Intent
     ) -> tuple[tuple[str, dict[str, object]], ...]:
-        conversation = cast(dict[str, object], scene["conversation"])
-        if conversation.get("intent") != "investigation":
-            return ()
+        if intent != "investigation":
+            return (("activity", {"action": "recommended_tasks", "count": 6}),)
         nodes = cast(list[dict[str, object]], scene["nodes"])
         evidence = cast(list[dict[str, object]], scene["evidence"])
         brief = cast(dict[str, object] | None, scene.get("brief"))
@@ -309,7 +232,21 @@ class ConversationRunner:
         )
 
 
-def _intent(question: str) -> Literal["investigation", "help", "navigation", "conversation"]:
+def _empty_scene() -> dict[str, object]:
+    return {
+        "question": "",
+        "status": "ready",
+        "mode": "live",
+        "nodes": [],
+        "edges": [],
+        "evidence": [],
+        "brief": None,
+        "trace": [],
+        "gaps": [],
+    }
+
+
+def _intent(question: str) -> Intent:
     normalized = " ".join(question.lower().split())
     help_markers = (
         "what is this",
@@ -324,36 +261,20 @@ def _intent(question: str) -> Literal["investigation", "help", "navigation", "co
         "who are you",
         "how do i use this",
     )
-    if any(marker in normalized for marker in help_markers):
-        return "help"
-    navigation_markers = ("focus ", "filter ", "zoom ", "show the graph")
-    if any(marker in normalized for marker in navigation_markers):
-        return "navigation"
-    casual_turns = {"how are you", "how are things", "great", "nice", "sounds good"}
-    casual_starts = (
-        "hello",
-        "hey",
-        "good morning",
-        "good afternoon",
-        "good evening",
-        "thanks",
-        "thank you",
-        "cheers",
+    task_markers = (
+        "test task",
+        "test tasks",
+        "examples",
+        "example",
+        "what can i try",
+        "what should i try",
+        "suggest a task",
+        "suggest tasks",
     )
-    if "recap" in normalized or "what did we discuss" in normalized:
-        return "conversation"
-    if normalized.strip(" !?.") in casual_turns:
-        return "conversation"
-    greeting = normalized.startswith(casual_starts) or normalized in {"hi", "hi!", "hi."}
-    greeting = greeting or normalized.startswith(("hi ", "hi,", "hi!"))
-    request_markers = ("can you", "could you", "please", "investigate", "find evidence")
-    if greeting and not any(marker in normalized for marker in request_markers):
+    if any(marker in normalized for marker in (*help_markers, *task_markers)):
+        return "help"
+    casual_turns = {"how are you", "how are things", "great", "nice", "sounds good"}
+    casual_starts = ("hello", "hey", "good morning", "good afternoon", "good evening", "thanks")
+    if normalized.strip(" !?.") in casual_turns or normalized.startswith(casual_starts):
         return "conversation"
     return "investigation"
-
-
-def _navigation_target(question: str) -> str | None:
-    normalized = question.lower()
-    if "cemcap" in normalized and ("d4.5" in normalized or "deliverable" in normalized):
-        return "evidence:deliverable:cemcap-d4.5-v1:recorded"
-    return None

@@ -1,81 +1,67 @@
 # Local evidence explorer
 
-This optional workspace is a removable entry-point slice: the browser receives a
-vendor-neutral scene projection from the existing investigation result. It has no
-path back into `src/kg_agentic/`, and it never receives Neo4j credentials or
-vendor query access.
+This optional browser workspace is a live entry point to the existing
+investigation composition. It never serves a saved graph, a recorded brief, or
+a replayed source list. The first screen is intentionally empty: a graph,
+retrieved evidence, and a structured brief appear only when a new live run
+returns them.
 
-## Run the recorded walkthrough
+## Run it
 
 ```powershell
 npm run ui:build
 .\.venv\Scripts\python.exe -m local_experience.api.server
 ```
 
-Open `http://127.0.0.1:8000`. The first view is explicitly a deterministic,
-current-only recorded snapshot of the cement slice, for inspecting interaction
-and citation behavior without an API call. Editing its question changes the run
-context only; it does not claim to generate a new answer.
+Open `http://127.0.0.1:8000`. Set `OPENAI_API_KEY`, `NEO4J_PASSWORD`, and the
+other usual core settings before asking an investigation question. If EURIO,
+Neo4j, or the model is unavailable, the explorer reports that real failure; it
+does not substitute demo data.
 
-The first-use rail behaves like a familiar chat: past messages are above the
-composer, and structured graph/evidence results appear only after an
-investigation. Users can chat, ask for orientation, focus a visible source, or
-start an evidence investigation without requiring the optional **Quick guide**.
-The guide still introduces
-the intended two-minute journey—start a recorded question, follow the public
-activity, inspect the amber CEMCAP D4.5 citation, then ask a follow-up—and can
-be dismissed or reopened from **Guide** in the header. Ordinary casual turns
-(such as “Hello” or “Thanks”), app/capability questions, and graph-navigation
-requests receive a clear local response without invoking retrieval or changing
-the graph. The public activity trace distinguishes this conversation or
-navigation from a bounded investigation.
+## What the agent does
 
-`POST /api/conversations` accepts a `threadId`, question, mode, optional
-`selectedNodeIds`, and (for live mode only) an ISO `asOf` cutoff. It runs a
-small LangGraph workflow with process-local, thread-scoped checkpoints, calls
-the existing investigation composition, and sends only bounded public SSE
-stages: `planned`, `retrieved_path`, `evidence_found`, and `claim_supported`.
-`DELETE /api/conversations/<threadId>` clears that local thread. Restarting the
-server also clears every thread. Selection is navigation context, never
-evidence; live historical questions still enforce the core's strict
-cutoff-eligibility policy. If EURIO, Neo4j, or the model is unavailable, the
-route sends a failure event instead of substituting the recorded snapshot.
+The local LangGraph wrapper has three explicitly bound actions:
 
-The recorded scene now projects the entire inspected local seed: three CORDIS
-projects, six organisation-role paths, five catalogue outputs, and six
-source-labelled records (including CEMCAP D4.5 full text, the ammonia
-publication, and clearly marked metadata-only records). It is a richer graph
-and tool-testing fixture, not a general corpus: Recorded mode replays one fixed
-CEMCAP recommendation regardless of question wording. It cannot answer a
-historical question or claim a newly generated recommendation.
+1. `check_live_services` checks the current local configuration.
+2. `recommend_test_tasks` offers six varied questions for exercising the app.
+3. `investigate_live_graph` invokes the core investigation path afresh and
+   projects only its returned paths, evidence, gaps, and supported brief.
+
+The wrapper retains only the short chat thread. A selected graph item can guide
+the next question, but it is not evidence and is never reused as a result. Each
+decision question executes `investigate_live_graph` again. The core remains the
+authority for retrieval and the supported recommendation, so the explorer does
+not add a second unconstrained answer generator.
+
+Its operating instruction reflects the product’s purpose: turn European
+research relationships and dated public sources into inspectable decisions;
+separate structural links from source claims; state uncertainty; and never
+treat participation, objectives, or absence of data as proof.
+
+`POST /api/conversations` accepts `threadId`, `question`, optional
+`selectedNodeIds`, and an optional ISO `asOf` cutoff. It emits bounded public
+SSE stages and a `completed` scene. `GET /api/health` reports `live-only` and
+the current tool count. `DELETE /api/conversations/<threadId>` clears local
+chat history. All responses use `Cache-Control: no-store`.
+
+## Suggested live tests
+
+- Compare CEMCAP and LEILAC2 for a retrofit decision; name unsafe assumptions.
+- Find evidence that would support or rule out an oxyfuel retrofit pathway.
+- Identify partners worth validating for complementary capture work.
+- Surface the decision-critical gap in a cement retrofit shortlist.
+- Ask what the returned public sources establish versus what remains unverified.
+- Repeat a question with a strict historical date and inspect abstention or gaps.
 
 ## Renderer decision
 
-The initial renderer is Sigma.js 3 + Graphology: it is MIT-licensed, WebGL-first,
-and keeps the scene contract independent from the renderer. Sigma has the right
-performance and visual-control profile for a small constellation-like working
-subgraph, while a synchronized DOM scene index and inspector supply keyboard and
-non-canvas access.
+The renderer is Sigma.js 3 + Graphology: it is MIT-licensed, WebGL-first, and
+keeps the scene contract separate from the renderer. A synchronized DOM index
+and inspector provide keyboard access to the returned graph and evidence.
 
-The decision remains deliberately reversible. Cytoscape.js offers a stronger
-headless/layout ecosystem; Neo4j Visualization Library offers especially direct
-Neo4j-style incremental graph APIs but needs a licence and telemetry review;
-react-force-graph is a good future 3D comparison candidate but its animated
-force layout is a weaker default for stable investigation scenes. Sources:
-[Sigma](https://www.sigmajs.org/), [Cytoscape](https://js.cytoscape.org/),
-[NVL](https://neo4j.com/docs/nvl/current/), and
-[react-force-graph](https://github.com/vasturiano/react-force-graph).
-
-## Browser check
-
-After building the client and starting the local server, run the deterministic
-recorded journey with:
+## Checks
 
 ```powershell
-npm run ui:test
+.\.venv\Scripts\python.exe -m pytest tests/test_local_experience.py -q
+npm run ui:build
 ```
-
-It checks the conversation/public-activity flow, ordinary no-retrieval chat,
-CEMCAP D4.5 inspection, reduced-motion preference, first-use guide,
-intent-aware capability response, and the keyboard-accessible evidence/detail
-surface.

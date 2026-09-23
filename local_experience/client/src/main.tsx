@@ -1,14 +1,24 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
-import { getRecordedScene, resetConversation, streamConversation } from "./api";
+import { getHealth, resetConversation, streamConversation } from "./api";
 import { GraphCanvas } from "./GraphCanvas";
 import type { Citation, ConversationMessage, Scene, SceneNode, Statement, Trace } from "./types";
 import "./style.css";
 
 const allKinds = ["project", "organization", "role", "output", "evidence", "entity"];
-const guidedQuestion = "Which CEMCAP evidence should I inspect first?";
-const guidedEvidenceId = "evidence:deliverable:cemcap-d4.5-v1:recorded";
+const guidedQuestion = "Which CEMCAP evidence should I inspect first for a retrofit decision?";
 const guideStorageKey = "kg-agentic-guide-dismissed";
+const emptyScene: Scene = {
+  question: "",
+  status: "ready",
+  mode: "live",
+  nodes: [],
+  edges: [],
+  evidence: [],
+  brief: null,
+  trace: [],
+  gaps: [],
+};
 const starterPrompts = [
   { label: "What is this?", question: "What is this app?" },
   { label: "Capture pathways", question: "Which cement carbon-capture approaches are represented in the inspected CEMCAP corpus, and what must a feasibility study still establish?" },
@@ -26,15 +36,15 @@ function hasSameGraph(current: Scene, next: Pick<Scene, "nodes" | "edges">) {
 }
 
 function App() {
-  const [scene, setScene] = useState<Scene | null>(null);
+  const [scene, setScene] = useState<Scene>(emptyScene);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [pinnedId, setPinnedId] = useState<string | null>(null);
   const [visibleKinds, setVisibleKinds] = useState(new Set(allKinds));
   const [visibleRelationshipTypes, setVisibleRelationshipTypes] = useState(new Set<string>());
   const [search, setSearch] = useState("");
   const [question, setQuestion] = useState("");
-  const [mode, setMode] = useState<"recorded" | "live">("recorded");
   const [asOf, setAsOf] = useState("");
+  const [toolCount, setToolCount] = useState<number | null>(null);
   const [activities, setActivities] = useState<Trace[]>([]);
   const [state, setState] = useState<"loading" | "ready" | "running" | "failed">("loading");
   const [error, setError] = useState<string | null>(null);
@@ -45,12 +55,9 @@ function App() {
   const guideButtonRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
-    getRecordedScene()
-      .then((nextScene) => {
-        setScene(nextScene);
-        setQuestion(nextScene.question);
-        setActivities(nextScene.trace);
-        setVisibleRelationshipTypes(new Set(nextScene.edges.map((edge) => edge.label)));
+    getHealth()
+      .then((health) => {
+        setToolCount(health.toolCount);
         setState("ready");
       })
       .catch((nextError: Error) => {
@@ -124,21 +131,17 @@ function App() {
       const nextScene = await streamConversation(
         {
           question: requestedQuestion,
-          mode,
           threadId: threadId.current,
           selectedNodeIds: contextId ? [contextId] : [],
-          asOf: mode === "live" && asOf ? asOf : null,
+          asOf: asOf || null,
         },
         (trace) => setActivities((current) => [...current, trace]),
         (delta) => setScene((current) => !current || hasSameGraph(current, delta)
           ? current
           : { ...current, ...delta, question: requestedQuestion }),
       );
-      if (nextScene.conversation?.intent === "help"
-        || nextScene.conversation?.intent === "navigation"
-        || nextScene.conversation?.intent === "conversation") {
+      if (nextScene.conversation?.intent !== "investigation") {
         setScene((current) => current ? { ...current, conversation: nextScene.conversation } : nextScene);
-        if (nextScene.conversation.navigationTarget) select(nextScene.conversation.navigationTarget);
       } else {
         setScene((current) => current && hasSameGraph(current, nextScene)
           ? { ...current, question: nextScene.question, conversation: nextScene.conversation }
@@ -160,9 +163,9 @@ function App() {
   };
   const startGuidedExample = () => {
     setQuestion(guidedQuestion);
-    setSelectedId(guidedEvidenceId);
+    setSelectedId(null);
     dismissGuide();
-    void run(guidedQuestion, guidedEvidenceId);
+    void run(guidedQuestion, null);
   };
   const resetThread = async () => {
     try {
@@ -175,15 +178,14 @@ function App() {
     }
   };
 
-  if (!scene && state === "loading") return <main className="boot">Loading local evidence scene…</main>;
-  if (!scene) return <main className="boot">The local API is unavailable: {error}</main>;
+  if (state === "loading") return <main className="boot">Checking live workspace…</main>;
 
   return (
     <main>
       <header className="topbar">
         <div><span className="eyebrow">KG / AGENTIC</span><h1>Evidence navigator</h1><p className="product-line">Make a cement-retrofit decision you can inspect.</p></div>
         <button ref={guideButtonRef} className="quiet guide-button" onClick={() => setGuideOpen(true)}>Guide</button>
-        <div className="status"><span className="dot" /> {(state === "running" || state === "failed" ? mode : scene.mode) === "recorded" ? "Recorded local snapshot" : asOf ? `Strict historical · ${asOf}` : "Live core run"}</div>
+        <div className="status"><span className="dot" /> {state === "running" ? "Running live tools" : asOf ? `Strict historical · ${asOf}` : `${toolCount ?? "…"} live tools ready`}</div>
       </header>
       {guideOpen && <Guide onDismiss={dismissGuide} onStart={startGuidedExample} />}
       <section className="workspace" aria-label="Investigation workspace">
@@ -193,6 +195,7 @@ function App() {
             <button className="quiet" onClick={resetScene}>Reset scene</button>
           </div>
           <GraphCanvas scene={scene} selectedId={selectedId} pinnedId={pinnedId} visibleKinds={visibleKinds} visibleRelationshipTypes={visibleRelationshipTypes} highlightedNodeIds={highlightedNodeIds} onSelect={select} />
+          {scene.nodes.length === 0 && <div className="graph-empty"><span className="eyebrow">LIVE GRAPH</span><p>Your first live investigation will appear here.</p></div>}
           <div className="graph-tools">
             <label>Search graph<input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Find evidence, project, organisation" /></label>
             {selected && <p className="selection-chip">Context: {selected.kind} · {selected.label}</p>}
@@ -219,20 +222,19 @@ function App() {
             <label htmlFor="question">Message the explorer</label>
             <textarea id="question" value={question} onChange={(event) => setQuestion(event.target.value)} rows={3} placeholder="Try “What should I inspect first?” or simply say hello." />
             <div className="prompt-suggestions" aria-label="Suggested messages">{starterPrompts.map((prompt) => <button key={prompt.label} onClick={() => setQuestion(prompt.question)}>{prompt.label}</button>)}</div>
-            <details className="run-settings"><summary>Evidence run settings</summary><fieldset className="mode-group"><legend>Investigation mode</legend><label className="mode"><input type="radio" name="mode" checked={mode === "recorded"} onChange={() => setMode("recorded")} /> Recorded walkthrough</label>
-            <label className="mode"><input type="radio" name="mode" checked={mode === "live"} onChange={() => setMode("live")} /> Live core run</label></fieldset>
-            <label className="as-of" htmlFor="as-of">Strict historical cutoff<input id="as-of" type="date" value={asOf} disabled={mode === "recorded"} onChange={(event) => setAsOf(event.target.value)} /></label></details>
+            <details className="run-settings"><summary>Evidence run settings</summary>
+            <label className="as-of" htmlFor="as-of">Strict historical cutoff<input id="as-of" type="date" value={asOf} onChange={(event) => setAsOf(event.target.value)} /></label></details>
             <button className="primary" disabled={state === "running"} onClick={() => void run()}>{state === "running" ? "Working…" : "Send message"}</button>
-            <p className="intent-hint">Chat stays chat. Only a decision question opens a structured result. In Recorded mode, every evidence question replays the same clearly labelled CEMCAP example.</p>
+            <p className="intent-hint">Chat stays chat. A decision question starts a new live graph investigation; it never replays a saved answer.</p>
             <button className="quiet reset-thread" onClick={resetThread}>Reset conversation</button>
-            <p className="hint">Selection guides navigation, never evidence. Recorded mode replays a labelled current snapshot; live historical mode uses only cutoff-eligible evidence.</p>
+            <p className="hint">Selection guides the next question; it is never evidence. Historical mode uses only cutoff-eligible evidence.</p>
             </section>
           </section>
           {scene.conversation && activities.length > 0 && <section className="activity-card" aria-live="polite"><span className="eyebrow">WHAT HAPPENED</span>
             {activities.map((trace, index) => <p key={`${trace.action}-${index}`}><b>{trace.action.replaceAll("_", " ")}</b>{trace.count !== undefined ? ` · ${trace.count}` : ""}{trace.detail ? ` · ${trace.detail}` : ""}</p>)}
           </section>}
           {error && <section className="failure" role="alert">{error}</section>}
-          {hasStructuredResult && scene.brief ? <section className="structured-result"><span className="eyebrow">{scene.mode === "recorded" ? "RECORDED EXAMPLE" : "STRUCTURED RESULT"}</span>{scene.mode === "recorded" && <p className="recorded-note">This is the only local example. It replays fixed CEMCAP evidence; it is not a new recommendation for this wording.</p>}<BriefPanel brief={scene.brief} onCitation={(citation) => select(`evidence:${citation.evidence_id}`)} /><EvidencePanel scene={scene} selectedId={selectedId} onSelect={select} /></section> : <section className="empty-result"><span className="eyebrow">NO STRUCTURED RESULT YET</span><p>Have a normal conversation, or ask a decision question when you want the graph, evidence, and recommendation to be shown together.</p></section>}
+          {hasStructuredResult && scene.brief ? <section className="structured-result"><span className="eyebrow">LIVE STRUCTURED RESULT</span><BriefPanel brief={scene.brief} onCitation={(citation) => select(`evidence:${citation.evidence_id}`)} /><EvidencePanel scene={scene} selectedId={selectedId} onSelect={select} /></section> : <section className="empty-result"><span className="eyebrow">NO RESULT YET</span><p>Have a normal conversation, or ask a decision question to run the live graph and show any returned evidence.</p></section>}
           <Details node={selected} pinned={pinnedId === selectedId} onPin={() => setPinnedId(pinnedId === selectedId ? null : selectedId)} />
           <GraphIndex nodes={indexNodes} search={search} selectedId={selectedId} onSelect={select} />
           <section className="gaps"><span className="eyebrow">LIMITS & GAPS</span>{scene.gaps.map((gap) => <p key={gap}>{gap}</p>)}</section>
@@ -269,7 +271,7 @@ function Guide({ onDismiss, onStart }: { onDismiss: () => void; onStart: () => v
   return <div className="guide-backdrop"><section ref={dialogRef} className="guide" role="dialog" aria-modal="true" aria-labelledby="guide-title" tabIndex={-1} onKeyDown={keepFocusInside}>
     <span className="eyebrow">FIRST TWO MINUTES</span><h2 id="guide-title">Quick guide</h2>
     <p>Turn a cement-retrofit question into an auditable recommendation: ask, watch the working graph settle around its support, then inspect the cited source yourself.</p>
-    <ol><li><b>Ask</b> a decision question. The recorded walkthrough is a safe, current-only example.</li><li><b>Trace</b> the public activity as CEMCAP D4.5 and its immediate neighborhood come into focus.</li><li><b>Continue</b> with a follow-up. Your selection guides navigation; it never becomes evidence.</li></ol>
+    <ol><li><b>Ask</b> a decision question. The agent starts a new live investigation.</li><li><b>Trace</b> the tool activity, then inspect the returned source and graph neighborhood.</li><li><b>Continue</b> with a follow-up. Your selection guides the next question; it never becomes evidence.</li></ol>
     <p className="hint">Use <b>Guide</b> in the header whenever you want this orientation again. Ask “What is this app?” for an honest capability summary without searching.</p>
     <div className="guide-actions"><button className="quiet" onClick={onDismiss}>Skip guide for now</button><button className="primary" onClick={onStart}>Start guided example</button></div>
   </section></div>;

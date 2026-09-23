@@ -1,14 +1,19 @@
 import type { Scene, Trace } from "./types";
 
-export async function getRecordedScene(): Promise<Scene> {
-  const response = await fetch("/api/scene/recorded");
-  if (!response.ok) throw new Error(`Scene request failed (${response.status}).`);
-  return response.json() as Promise<Scene>;
+export interface Health {
+  status: string;
+  mode: "live-only";
+  toolCount: number;
+}
+
+export async function getHealth(): Promise<Health> {
+  const response = await fetch("/api/health", { cache: "no-store" });
+  if (!response.ok) throw new Error(`Service check failed (${response.status}).`);
+  return response.json() as Promise<Health>;
 }
 
 export interface ConversationInput {
   question: string;
-  mode: "recorded" | "live";
   threadId: string;
   selectedNodeIds: string[];
   asOf: string | null;
