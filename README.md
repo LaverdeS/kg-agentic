@@ -156,6 +156,13 @@ of factual truth or consulting usefulness; independent human review remains pend
 See [the evaluation method](docs/evaluations/evaluation-method.md) for the exact
 baseline limits and what a report does and does not establish.
 
+On the recorded frozen run, the full agent completed seven of eight cases and correctly
+abstained on the unsupported intra-year historical case; semantic-only completed six,
+including no partner recommendation. This is bounded evidence that structural paths
+helped this corpus's partner/comparison workflow, not a claim of general consulting
+superiority. The [evaluation report](docs/evaluations/cement-retrofit-v1-report.md)
+records the scores, costs, limitations, and observed historical non-change.
+
 ## Recommendations that can be audited
 
 A brief should distinguish source-backed facts, source-reported claims, model extractions, and agent hypotheses. Each supported claim should lead back to an identifiable source and the relevant passage or relationship.
