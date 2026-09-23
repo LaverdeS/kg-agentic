@@ -1,48 +1,41 @@
-"""Live, tool-oriented conversation orchestration for the optional explorer.
+"""Conversation orchestration for the live local evidence workspace.
 
-The explorer intentionally keeps no graph snapshot. Browser message history is
-checkpointed locally, while each investigation invokes the core composition
-again and projects only that run's returned paths and evidence.
+The language model may converse, navigate existing UI context, or request one
+bounded core investigation. Only the last option can call the evidence graph.
 """
 
 from __future__ import annotations
 
 import operator
+import re
 from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Annotated, Literal, TypedDict, cast
 
 from langgraph.graph import START, StateGraph
 
-SYSTEM_PROMPT = """You help turn European research relationships and dated public
-sources into decisions people can inspect. Use a live tool before answering. Keep
-structural relationships separate from source claims, make uncertainty explicit,
-and never turn project participation, objectives, or missing data into proof."""
-
-TEST_TASKS = (
-    "Compare CEMCAP and LEILAC2 for a retrofit decision; name the unsafe assumptions.",
-    "Find evidence that would support or rule out an oxyfuel retrofit pathway.",
-    "Identify partners worth validating for complementary capture work and the evidence needed.",
-    "Surface the decision-critical gap in a cement retrofit shortlist and a next validation step.",
-    "Ask what the currently retrieved public sources establish versus what remains unverified.",
-    "Run the same question with a strict historical date and inspect the abstention or gaps.",
+from kg_agentic.application.conversation import (
+    ConversationDecision,
+    ConversationModel,
+    ConversationModelRequest,
 )
 
-Intent = Literal["investigation", "help", "conversation"]
+INVESTIGATION_CONTEXT = """Run a bounded evidence investigation for the current user question.
+Use EURIO structural relationships and the configured Graphiti evidence corpus. Keep structural
+relationships separate from source claims, make uncertainty explicit, and never turn project
+participation, objectives, or missing data into proof."""
+
+Intent = Literal["investigation", "navigation", "conversation"]
 SceneLoader = Callable[[str, str | None], dict[str, object]]
-RuntimeChecker = Callable[[], dict[str, object]]
-TaskRecommender = Callable[[], tuple[str, ...]]
 
 
 class ConversationState(TypedDict, total=False):
     question: str
-    query: str
     selected_node_ids: list[str]
     as_of: str | None
     intent: Intent
+    decision: ConversationDecision
     scene: dict[str, object]
-    runtime: dict[str, object]
-    tasks: tuple[str, ...]
     history: Annotated[list[dict[str, str]], operator.add]
 
 
@@ -61,25 +54,17 @@ class ConversationRun:
 
 
 class ConversationRunner:
-    """A LangGraph agent that acts through three explicitly bound live tools.
+    """Keep natural conversation and bounded evidence investigation behind one interface."""
 
-    The policy is intentionally bounded rather than an unconstrained second LLM:
-    the existing core agent is the authority for retrieval and the supported
-    recommendation. This wrapper chooses a tool, preserves chat text, and never
-    reuses a former scene as evidence.
-    """
-
-    tool_names = ("check_live_services", "recommend_test_tasks", "investigate_live_graph")
+    tool_names = ("investigate_live_graph",)
 
     def __init__(
         self,
         investigate_live_graph: SceneLoader,
-        check_live_services: RuntimeChecker,
-        recommend_test_tasks: TaskRecommender,
+        conversation_model: ConversationModel,
     ) -> None:
         self._investigate_live_graph = investigate_live_graph
-        self._check_live_services = check_live_services
-        self._recommend_test_tasks = recommend_test_tasks
+        self._conversation_model = conversation_model
         self._history_by_thread: dict[str, list[dict[str, str]]] = {}
         workflow = StateGraph(ConversationState)
         workflow.add_node("reason", self._reason)
@@ -113,6 +98,7 @@ class ConversationRunner:
             ),
         )
         intent = cast(Intent, state.get("intent"))
+        decision = cast(ConversationDecision, state.get("decision"))
         scene = dict(cast(dict[str, object], state.get("scene")))
         scene["question"] = question
         scene["conversation"] = {
@@ -121,23 +107,12 @@ class ConversationRunner:
             "messages": state.get("history", [])[-8:],
             "asOf": request.as_of,
             "intent": intent,
+            "navigationTarget": decision.navigation_target,
         }
         self._history_by_thread[request.thread_id] = cast(
             list[dict[str, str]], state.get("history", [])[-8:]
         )
         return ConversationRun(events=self._events(scene, intent), scene=scene)
-
-    @staticmethod
-    def public_activity(request: ConversationRequest) -> dict[str, str]:
-        intent = _intent(request.question)
-        return {
-            "action": "planned" if intent == "investigation" else "checked_live_services",
-            "detail": (
-                "Starting a new live graph investigation. No previous result will be reused."
-                if intent == "investigation"
-                else "Checking the live workspace before replying; no graph result is seeded."
-            ),
-        }
 
     def reset(self, thread_id: str) -> None:
         if not thread_id.strip():
@@ -146,39 +121,47 @@ class ConversationRunner:
 
     def _reason(self, state: ConversationState) -> ConversationState:
         question = cast(str, state.get("question"))
-        intent = _intent(question)
-        if intent != "investigation":
-            return {"intent": intent, "history": [{"role": "user", "content": question}]}
-
-        previous_questions = [
-            message["content"]
-            for message in state.get("history", [])
-            if message["role"] == "user"
-        ]
-        context = [SYSTEM_PROMPT]
-        if previous_questions:
-            context.append(f"Earlier question for context only: {previous_questions[-1]}")
-        if state.get("selected_node_ids"):
-            selected = ", ".join(cast(list[str], state.get("selected_node_ids")))
-            context.append(f"Selected UI context, not evidence: {selected}")
-        context.append(f"Current user question: {question}")
+        retrieval_allowed = not _retrieval_opted_out(question)
+        decision = self._conversation_model(
+            ConversationModelRequest(
+                question=question,
+                history=tuple(state.get("history", [])),
+                selected_node_ids=tuple(state.get("selected_node_ids", [])),
+                as_of=state.get("as_of"),
+                retrieval_allowed=retrieval_allowed,
+            )
+        )
+        action = decision.action
+        if action == "investigate" and not retrieval_allowed:
+            action = "respond"
+            decision = ConversationDecision(action="respond", message=decision.message)
+        intent: Intent = (
+            "investigation"
+            if action == "investigate"
+            else "navigation"
+            if action == "navigate"
+            else "conversation"
+        )
         return {
             "intent": intent,
-            "query": "\n\n".join(context),
+            "decision": decision,
             "history": [{"role": "user", "content": question}],
         }
 
     def _act(self, state: ConversationState) -> ConversationState:
         intent = cast(Intent, state.get("intent"))
-        if intent == "investigation":
-            return {
-                "scene": self._investigate_live_graph(
-                    cast(str, state.get("query")), state.get("as_of")
-                )
-            }
-        runtime = self._check_live_services()
-        tasks = self._recommend_test_tasks()
-        return {"runtime": runtime, "tasks": tasks, "scene": _empty_scene()}
+        if intent != "investigation":
+            return {"scene": _empty_scene()}
+        decision = cast(ConversationDecision, state.get("decision"))
+        return {
+            "scene": self._investigate_live_graph(
+                _investigation_query(
+                    decision.investigation_question or cast(str, state.get("question")),
+                    cast(list[str], state.get("selected_node_ids", [])),
+                ),
+                state.get("as_of"),
+            )
+        }
 
     def _respond(self, state: ConversationState) -> ConversationState:
         intent = cast(Intent, state.get("intent"))
@@ -187,41 +170,37 @@ class ConversationRunner:
             brief = cast(dict[str, object] | None, scene.get("brief"))
             if brief is None:
                 response = (
-                    "I checked the live graph, but it could not support a full recommendation. "
-                    "The gaps below show what to validate next."
+                    "I checked the live evidence, but it could not support a recommendation. "
+                    "The workspace shows the gaps to validate next."
                 )
             else:
                 recommendation = cast(dict[str, object], brief["recommendation"])
                 response = cast(str, recommendation["text"])
-            return {"history": [{"role": "assistant", "content": response}]}
-
-        runtime = cast(dict[str, object], state.get("runtime"))
-        tasks = cast(tuple[str, ...], state.get("tasks"))
-        if intent == "help":
-            response = (
-                "I use live tools, not a recorded example. Ask a decision question and I will "
-                "run the graph, then show only the returned paths, sources, and supported brief. "
-                f"Live service check: {runtime['summary']}. Try one of these: "
-                + " ".join(f"{index + 1}. {task}" for index, task in enumerate(tasks[:5]))
-            )
         else:
-            response = (
-                "I’m ready. I checked the live workspace and will not reuse an old graph result. "
-                f"{runtime['summary']} Ask a decision question, or try: {tasks[0]}"
-            )
+            decision = cast(ConversationDecision, state.get("decision"))
+            response = decision.message
         return {"history": [{"role": "assistant", "content": response}]}
 
     @staticmethod
     def _events(
         scene: dict[str, object], intent: Intent
     ) -> tuple[tuple[str, dict[str, object]], ...]:
-        if intent != "investigation":
-            return (("activity", {"action": "recommended_tasks", "count": 6}),)
+        if intent == "conversation":
+            return (("activity", {"action": "answered", "detail": "No evidence tools used."}),)
+        if intent == "navigation":
+            return (("activity", {"action": "focused", "detail": "Existing graph only."}),)
         nodes = cast(list[dict[str, object]], scene["nodes"])
         evidence = cast(list[dict[str, object]], scene["evidence"])
         brief = cast(dict[str, object] | None, scene.get("brief"))
         claim_count = len(cast(list[object], brief.get("claims", []))) if brief else 0
         return (
+            (
+                "activity",
+                {
+                    "action": "planned",
+                    "detail": "Starting a live evidence investigation for this question.",
+                },
+            ),
             (
                 "activity",
                 {"action": "retrieved_path", "count": len(cast(list[object], scene["edges"]))},
@@ -246,35 +225,22 @@ def _empty_scene() -> dict[str, object]:
     }
 
 
-def _intent(question: str) -> Intent:
-    normalized = " ".join(question.lower().split())
-    help_markers = (
-        "what is this",
-        "what is the app",
-        "what can you do",
-        "what tools",
-        "what data",
-        "what sources",
-        "are you connected",
-        "help me",
-        "how does this work",
-        "who are you",
-        "how do i use this",
+def _retrieval_opted_out(question: str) -> bool:
+    normalized = " ".join(question.casefold().split())
+    return bool(
+        re.search(
+            r"\b(do not|don't|dont|without|no)\s+(use|using|search|query|check)?\s*"
+            r"(the\s+)?(graph|retrieval|tools?|evidence)\b",
+            normalized,
+        )
     )
-    task_markers = (
-        "test task",
-        "test tasks",
-        "examples",
-        "example",
-        "what can i try",
-        "what should i try",
-        "suggest a task",
-        "suggest tasks",
-    )
-    if any(marker in normalized for marker in (*help_markers, *task_markers)):
-        return "help"
-    casual_turns = {"how are you", "how are things", "great", "nice", "sounds good"}
-    casual_starts = ("hello", "hey", "good morning", "good afternoon", "good evening", "thanks")
-    if normalized.strip(" !?.") in casual_turns or normalized.startswith(casual_starts):
-        return "conversation"
-    return "investigation"
+
+
+def _investigation_query(question: str, selected_node_ids: list[str]) -> str:
+    context = [INVESTIGATION_CONTEXT]
+    if selected_node_ids:
+        context.append(
+            "Selected interface context, not evidence: " + ", ".join(selected_node_ids)
+        )
+    context.append(f"Current user question: {question}")
+    return "\n\n".join(context)

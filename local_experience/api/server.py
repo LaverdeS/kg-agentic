@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import asyncio
+import gzip
 import json
 import mimetypes
 import os
@@ -16,11 +17,12 @@ from typing import Any, cast
 from dotenv import load_dotenv
 
 from kg_agentic.application.cement import CORPUS_ID
+from kg_agentic.application.conversation import ConversationDecision, ConversationModelRequest
 from kg_agentic.infrastructure.bootstrap import investigate_cement_slice
+from kg_agentic.infrastructure.openai_conversation import generate_conversation_decision
 from kg_agentic.infrastructure.runtime import Settings
 from kg_agentic.knowledge.models import InvestigationRequest
 from local_experience.api.conversation import (
-    TEST_TASKS,
     ConversationRequest,
     ConversationRunner,
 )
@@ -31,8 +33,16 @@ PORT = 8000
 CLIENT_DIST = Path(__file__).parents[1] / "client" / "dist"
 
 
+class ExplorerServer(ThreadingHTTPServer):
+    """Handle browser asset bursts without dropping parallel local connections."""
+
+    daemon_threads = True
+    request_queue_size = 128
+
+
 class ExplorerHandler(BaseHTTPRequestHandler):
     server_version = "kg-agentic-local-experience/0.1"
+    protocol_version = "HTTP/1.1"
 
     def do_OPTIONS(self) -> None:  # noqa: N802
         self._respond(HTTPStatus.NO_CONTENT, None)
@@ -46,6 +56,7 @@ class ExplorerHandler(BaseHTTPRequestHandler):
                     "corpus": CORPUS_ID,
                     "mode": "live-only",
                     "toolCount": CONVERSATIONS.tool_count,
+                    "coverage": _local_corpus_coverage(),
                 },
             )
             return
@@ -86,12 +97,20 @@ class ExplorerHandler(BaseHTTPRequestHandler):
 
         self.send_response(HTTPStatus.OK)
         self._headers("text/event-stream")
+        self.send_header("Connection", "close")
         self.end_headers()
+        self.close_connection = True
         self._event(
             "run_started",
             {"mode": "live", "threadId": conversation.thread_id},
         )
-        self._event("activity", cast(dict[str, object], CONVERSATIONS.public_activity(conversation)))
+        self._event(
+            "activity",
+            {
+                "action": "interpreting",
+                "detail": "Deciding whether the evidence workspace is useful for this turn.",
+            },
+        )
         try:
             run = CONVERSATIONS.run(conversation)
             for event, payload in run.events:
@@ -116,11 +135,13 @@ class ExplorerHandler(BaseHTTPRequestHandler):
         return payload
 
     def _respond(self, status: HTTPStatus, payload: dict[str, object] | None) -> None:
+        body = json.dumps(payload, ensure_ascii=False).encode() if payload is not None else b""
         self.send_response(status)
-        self._headers("application/json")
+        self._headers("application/json", content_length=len(body))
         self.end_headers()
-        if payload is not None:
-            self.wfile.write(json.dumps(payload, ensure_ascii=False).encode())
+        if body:
+            self.wfile.write(body)
+            self.wfile.flush()
 
     def _serve_client(self) -> None:
         relative_path = self.path.split("?", maxsplit=1)[0].lstrip("/") or "index.html"
@@ -139,13 +160,25 @@ class ExplorerHandler(BaseHTTPRequestHandler):
             )
             return
         content_type = mimetypes.guess_type(requested.name)[0] or "application/octet-stream"
+        body = requested.read_bytes()
+        use_gzip = "gzip" in self.headers.get("Accept-Encoding", "") and (
+            content_type.startswith("text/") or content_type in {"application/javascript"}
+        )
+        if use_gzip:
+            body = gzip.compress(body, compresslevel=6)
         self.send_response(HTTPStatus.OK)
-        self._headers(content_type)
+        self._headers(content_type, content_length=len(body))
+        if use_gzip:
+            self.send_header("Content-Encoding", "gzip")
+            self.send_header("Vary", "Accept-Encoding")
         self.end_headers()
-        self.wfile.write(requested.read_bytes())
+        self.wfile.write(body)
+        self.wfile.flush()
 
-    def _headers(self, content_type: str) -> None:
+    def _headers(self, content_type: str, *, content_length: int | None = None) -> None:
         self.send_header("Content-Type", f"{content_type}; charset=utf-8")
+        if content_length is not None:
+            self.send_header("Content-Length", str(content_length))
         self.send_header("Access-Control-Allow-Origin", "http://127.0.0.1:5173")
         self.send_header("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS")
         self.send_header("Cache-Control", "no-store")
@@ -175,13 +208,26 @@ def _live_payload(question: str, as_of: str | None = None) -> dict[str, object]:
     return payload
 
 
-def _live_service_status() -> dict[str, object]:
-    """Check local credentials afresh without connecting to or caching the graph."""
+def _local_corpus_coverage() -> dict[str, int]:
+    data_dir = Path(os.getenv("KG_AGENTIC_DATA_DIR", "var/corpora"))
+    version_path = data_dir / "cordis-eurio" / CORPUS_ID / "versions.json"
+    try:
+        versions = cast(list[str], json.loads(version_path.read_text(encoding="utf-8")))
+    except (FileNotFoundError, json.JSONDecodeError):
+        versions = []
+    projects = sum(":project-" in version for version in versions)
+    results = sum(":result-" in version for version in versions)
+    return {
+        "projectRecords": projects,
+        "resultMetadataRecords": results,
+        "fullTextRecords": len(versions) - projects - results,
+        "sourceVersions": len(versions),
+    }
+
+
+def _conversation_decision(request: ConversationModelRequest) -> ConversationDecision:
     load_dotenv()
-    missing = [name for name in ("OPENAI_API_KEY", "NEO4J_PASSWORD") if not os.getenv(name)]
-    if missing:
-        return {"ready": False, "summary": f"Missing {', '.join(missing)}."}
-    return {"ready": True, "summary": "Live graph credentials are present."}
+    return generate_conversation_decision(Settings.from_environment(), request)
 
 
 def _conversation_request(payload: dict[str, Any]) -> ConversationRequest:
@@ -214,14 +260,13 @@ def _conversation_request(payload: dict[str, Any]) -> ConversationRequest:
 
 CONVERSATIONS = ConversationRunner(
     _live_payload,
-    _live_service_status,
-    lambda: TEST_TASKS,
+    _conversation_decision,
 )
 
 
 def main() -> None:
     print(f"Local experience API: http://{HOST}:{PORT}/api/health")
-    ThreadingHTTPServer((HOST, PORT), ExplorerHandler).serve_forever()
+    ExplorerServer((HOST, PORT), ExplorerHandler).serve_forever()
 
 
 if __name__ == "__main__":

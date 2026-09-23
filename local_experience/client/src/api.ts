@@ -4,6 +4,12 @@ export interface Health {
   status: string;
   mode: "live-only";
   toolCount: number;
+  coverage: {
+    projectRecords: number;
+    resultMetadataRecords: number;
+    fullTextRecords: number;
+    sourceVersions: number;
+  };
 }
 
 export async function getHealth(): Promise<Health> {
@@ -37,7 +43,6 @@ export async function streamConversation(
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
   let buffer = "";
-  let finalScene: Scene | undefined;
 
   while (true) {
     const { done, value } = await reader.read();
@@ -51,13 +56,18 @@ export async function streamConversation(
       const payload = JSON.parse(data) as Scene | Trace | { message: string; errorType?: string };
       if (event === "activity") onActivity(payload as Trace);
       if (event === "graph_delta") onGraphDelta(payload as Pick<Scene, "nodes" | "edges">);
-      if (event === "completed") finalScene = payload as Scene;
-      if (event === "failed") throw new Error((payload as { message: string }).message);
+      if (event === "completed") {
+        await reader.cancel();
+        return payload as Scene;
+      }
+      if (event === "failed") {
+        await reader.cancel();
+        throw new Error((payload as { message: string }).message);
+      }
     }
     if (done) break;
   }
-  if (!finalScene) throw new Error("The conversation ended without a completed investigation.");
-  return finalScene;
+  throw new Error("The conversation ended without a completed investigation.");
 }
 
 export async function resetConversation(threadId: string): Promise<void> {

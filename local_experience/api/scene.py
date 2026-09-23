@@ -175,7 +175,19 @@ def _entity_label(entity_id: str) -> str:
         "afaf42f5-15c7-3c14-ba5b-012eb4c8b2ac": "CEMCAP ammonia publication metadata",
         "2d34f8d6-c3ec-3593-8bb1-12e4a264a6a9": "HERCCULES result metadata",
     }
-    return known_projects.get(_short_name(entity_id), _short_name(entity_id))
+    short_name = _short_name(entity_id)
+    if short_name in known_projects:
+        return known_projects[short_name]
+    resource_type = _resource_type(entity_id)
+    if len(short_name) == 36 and short_name.count("-") == 4:
+        prefix = {
+            "organization": "EURIO organisation",
+            "output": "CORDIS result",
+            "project": "EURIO project",
+            "role": "Participant role",
+        }.get(resource_type, "Evidence entity")
+        return f"{prefix} · {short_name[:8]}"
+    return short_name
 
 
 def _evidence_label(item: EvidenceItem) -> str:

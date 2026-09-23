@@ -98,10 +98,10 @@ uv run pyright
 
 ## Explore the evidence locally
 
-The optional local explorer presents the current cement slice as a 2D evidence
-constellation beside its cited brief. It is separate from the core investigation
-package and starts with a clearly labelled recorded, current-only snapshot so
-the experience can be inspected without consuming model credit:
+The optional local Evidence Workbench presents conversation, the cited brief,
+the returned 2D subgraph, source details, and public tool activity as peer views.
+It is separate from the core investigation package and has no recorded or
+synthetic production mode:
 
 > This tool helps a cement producer explore which carbon-capture approaches and
 > partners are worth taking into a site-specific feasibility study. Ask a
@@ -117,21 +117,25 @@ npm run ui:build
 .\.venv\Scripts\python.exe -m local_experience.api.server
 ```
 
-Open `http://127.0.0.1:8000`. Search or select a graph element, cited evidence
-link, or keyboard-accessible scene-index item to inspect its identifiers and
-provenance; selection focuses its immediate neighborhood and can be supplied to
-the local conversation as navigation context, never as evidence. The optional
-LangGraph conversation has thread-scoped in-memory memory and emits only public
-investigation stages. Resetting the conversation or restarting the server clears
-that memory. The recorded walkthrough is current-only and cannot accept a
-historical cutoff; Live core run accepts an optional strict historical date and
-invokes the same core use case as the CLI, reporting unavailable services
-explicitly. The recorded scene distinguishes the CEMCAP D4.5 full-text
-deliverable from result metadata and the ammonia publication.
+Open `http://127.0.0.1:8000`. Ordinary conversation and explanations use a
+model-backed conversational path without touching the graph. The model can
+choose one bounded investigation tool when current evidence would materially
+improve the answer; an explicit request not to use the graph is enforced as a
+tool constraint. Example questions are prompt guidance, not a tool or canned
+answer workflow.
 
-After starting the local server, `npm run ui:test` runs the recorded browser
-journey, including activity, thread memory, evidence focus, and reduced-motion
-checks.
+An investigation invokes the same live EURIO, Graphiti/Neo4j, and OpenAI path as
+the CLI. The workbench then shows only that run's returned subgraph, citations,
+source-qualified metadata, and public activity stages. Selected graph context can
+guide a follow-up but never becomes evidence. Conversation memory is in-process,
+thread-scoped, and cleared by reset or server restart. The interface names the
+current bounded scope—three projects and ten indexed source versions—rather than
+implying exhaustive CORDIS coverage.
+
+After starting the local server, `npm run ui:test` runs deterministic browser
+journeys with controlled SSE results for layout, ordinary chat, cited evidence,
+graph/source synchronization, trace visibility, and reduced motion. Verify the
+real stack separately because it contacts live services and uses model credit.
 
 The comparison command reports source-qualified evidence versions retrieved only at one cutoff;
 it explicitly does not treat a retrieval/ranking difference as newly eligible evidence or a
