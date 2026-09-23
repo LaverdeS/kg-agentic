@@ -1,0 +1,23 @@
+{
+  "dataset_id": "cordis-eurio",
+  "corpus_id": "cement-retrofit-v1",
+  "question_configuration": "evals/questions.json",
+  "source_versions": [
+    "cordis-eurio:cement-retrofit-v1:deliverable-cemcap-d4-5-v1:sha256:6cfb8801b8d9ce0304ba44806487ed68a0e28e53ef55a87f3d71b075d6b5fbb0",
+    "cordis-eurio:cement-retrofit-v1:project-101096691:sha256:44ba3b863c065b7aa04d7e694b315fd472d7dfe0540784fe0306e493c586ae2e",
+    "cordis-eurio:cement-retrofit-v1:project-641185:sha256:ae1ec1a256cf982b60787f60c997bdf9df3afdf191403d830056976ea761ebb5",
+    "cordis-eurio:cement-retrofit-v1:project-884170:sha256:2ca4640c84d8eb862dbffb097c2ba262e56e5f6d4499ce59ab7c774fbc4dab61",
+    "cordis-eurio:cement-retrofit-v1:publication-perez-calvo-2018:sha256:be9a026cda0b5b93e0d551cbbd775396c2dc192b0abe9c00caf81b85ef7f135d",
+    "cordis-eurio:cement-retrofit-v1:result-027a7538-d733-36b3-a39a-89d230b98478:sha256:86fb83766018dfac25792220c64330bf65ea9fbab3e89ae0c09a24539be53a70",
+    "cordis-eurio:cement-retrofit-v1:result-06290772-9546-3c7a-a084-8d0479115e69:sha256:51ea87c62edfc863c7b7a1a5a189ac11597af01e22e9bf0bb1c600736c2e0bc6",
+    "cordis-eurio:cement-retrofit-v1:result-1ecbec27-80ed-397b-a342-3aff3b3eac5b:sha256:84f8695a0219712437d7b1c7be121c361750acded92d5b1ed153eb70f3b17801",
+    "cordis-eurio:cement-retrofit-v1:result-21cccdd4-f502-3290-8b68-7340d212fea4:sha256:a578b8b26a0171ff57eef996a0533c1571dab3afab9c5d6ceb089fee549742b9",
+    "cordis-eurio:cement-retrofit-v1:result-461c02da-5450-3ad-ba61-10d85f5c4583:sha256:a7c77939c7ba514bc10a1511245e14922d51db39cc40f7f705fb440b187dca79",
+    "cordis-eurio:cement-retrofit-v1:result-9f76089e-b0d3-38fc-a12b-5606f8803337:sha256:6a5c545ec579015977c32a82da6a1686e8fbc74ad711209bcf48570b7816af16"
+  ],
+  "systems": {
+    "agent": "EURIO structural paths plus Graphiti semantic evidence",
+    "eurio_only": "EURIO structural paths only; no source-text evidence",
+    "semantic_only": "Graphiti semantic evidence only; no EURIO structural paths"
+  }
+}

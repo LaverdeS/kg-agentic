@@ -7,13 +7,17 @@ from datetime import UTC, datetime
 from enum import Enum
 from pathlib import Path
 from time import monotonic
+from typing import Literal, cast
 from uuid import uuid4
 
 from dotenv import load_dotenv
 
 from kg_agentic.application.cement import CORPUS_ID, CURRENT_QUESTION
+from kg_agentic.application.evaluation import EvaluationQuestion
 from kg_agentic.infrastructure.bootstrap import (
     compare_cement_slice,
+    evaluate_cement_slice,
+    frozen_cement_source_versions,
     ingest_cement_slice,
     investigate_cement_slice,
 )
@@ -70,9 +74,7 @@ async def _dispatch(args: argparse.Namespace, *, run_id: str, started: float) ->
             started=started,
         )
     if args.command == "evaluate":
-        questions = json.loads(Path("evals/questions.json").read_text(encoding="utf-8"))
-        print(json.dumps(questions, indent=2))
-        return 0
+        return await _evaluate(args.output, run_id=run_id, started=started)
     raise ValueError(f"Unknown command: {args.command}")
 
 
@@ -165,6 +167,79 @@ async def _compare(
     return 0 if comparison.earlier.status == comparison.later.status == "completed" else 2
 
 
+async def _evaluate(
+    output_value: str | None,
+    *,
+    run_id: str | None = None,
+    started: float | None = None,
+) -> int:
+    settings = Settings.from_environment()
+    run_id = run_id or str(uuid4())
+    started = started if started is not None else monotonic()
+    raw_questions = _read_evaluation_questions()
+    questions = tuple(_evaluation_question(item) for item in raw_questions)
+    frozen_source_versions = frozen_cement_source_versions(settings)
+    _log(
+        "evaluation_started",
+        run_id=run_id,
+        source="cordis-eurio",
+        corpus=CORPUS_ID,
+        questions=len(questions),
+        systems=("agent", "eurio_only", "semantic_only"),
+    )
+    report = await evaluate_cement_slice(settings, questions)
+    output = (
+        Path(output_value)
+        if output_value is not None
+        else settings.data_dir / "evaluations" / f"cement-retrofit-{run_id}.json"
+    )
+    output.parent.mkdir(parents=True, exist_ok=True)
+    payload = {
+        "schema_version": 1,
+        "generated_at": datetime.now(UTC),
+        "corpus": {
+            "dataset_id": "cordis-eurio",
+            "corpus_id": CORPUS_ID,
+            "source_versions": frozen_source_versions,
+        },
+        "generation_settings": {
+            "model": settings.model,
+            "model_max_output_tokens": settings.model_max_output_tokens,
+            "evidence_limit": settings.evidence_limit,
+        },
+        "questions": raw_questions,
+        "report": asdict(report),
+        "measurement_notes": {
+            "faithfulness_proxy": (
+                "Automated citation-resolvability proxy; it does not independently prove source "
+                "truth or model faithfulness."
+            ),
+            "consulting_review": (
+                "Automated rubric checks the required brief fields and retrieved multi-hop paths. "
+                "Independent human consulting review is pending."
+            ),
+            "comparison": (
+                "Questions with comparison_from run both strict cutoffs. Later-only retrieval is "
+                "reported without treating a rank difference as real-world change."
+            ),
+        },
+    }
+    output.write_text(
+        json.dumps(payload, default=_json_default, indent=2) + "\n", encoding="utf-8"
+    )
+    _log(
+        "evaluation_completed",
+        run_id=run_id,
+        source="cordis-eurio",
+        corpus=CORPUS_ID,
+        output=str(output),
+        failures=report.has_failures,
+        duration_ms=round((monotonic() - started) * 1000),
+    )
+    print(json.dumps({"output": str(output), "summaries": asdict(report)["summaries"]}, indent=2))
+    return 2 if report.has_failures else 0
+
+
 def _print_result(result: InvestigationResult, *, json_output: bool) -> None:
     if json_output:
         print(json.dumps(asdict(result), default=_json_default, indent=2))
@@ -220,6 +295,58 @@ def _parse_as_of(value: str | None) -> datetime | None:
     return parsed.replace(tzinfo=UTC) if parsed.tzinfo is None else parsed
 
 
+def _read_evaluation_questions() -> list[dict[str, object]]:
+    value = json.loads(Path("evals/questions.json").read_text(encoding="utf-8"))
+    if not isinstance(value, list) or not all(isinstance(item, dict) for item in value):
+        raise ValueError("evals/questions.json must contain a list of question objects")
+    return value
+
+
+def _evaluation_question(value: dict[str, object]) -> EvaluationQuestion:
+    try:
+        status = value.get("expected_status")
+        if status is None:
+            expected_status = None
+        elif status in {"completed", "abstained"}:
+            expected_status = cast(Literal["completed", "abstained"], status)
+        else:
+            raise ValueError("expected_status must be completed or abstained")
+        as_of_value = value.get("as_of")
+        comparison_from_value = value.get("comparison_from")
+        identifier_values = value.get("reference_identifiers", [])
+        path_values = value.get("reference_paths", [])
+        support_values = value.get("acceptable_support", [])
+        abstain_values = value.get("abstain_when", [])
+        invalid_citation_case = value.get("invalid_citation_case")
+        if not isinstance(identifier_values, list):
+            raise ValueError("reference identifiers must be a list")
+        if not isinstance(path_values, list):
+            raise ValueError("reference paths must be a list")
+        if not isinstance(support_values, list):
+            raise ValueError("acceptable support must be a list")
+        if not isinstance(abstain_values, list):
+            raise ValueError("abstention conditions must be a list")
+        if invalid_citation_case is not None and not isinstance(invalid_citation_case, str):
+            raise ValueError("invalid_citation_case must be a string")
+        return EvaluationQuestion(
+            id=str(value["id"]),
+            question=str(value["question"]),
+            as_of=_parse_as_of(as_of_value if isinstance(as_of_value, str) else None),
+            comparison_from=_parse_as_of(
+                comparison_from_value if isinstance(comparison_from_value, str) else None
+            ),
+            reference_identifiers=tuple(str(item) for item in identifier_values),
+            reference_paths=tuple(str(item) for item in path_values),
+            acceptable_support=tuple(str(item) for item in support_values),
+            abstain_when=tuple(str(item) for item in abstain_values),
+            invalid_citation_case=invalid_citation_case,
+            expected_status=expected_status,
+            requires_multihop=bool(value.get("requires_multihop", False)),
+        )
+    except (KeyError, TypeError, ValueError) as error:
+        raise ValueError("Invalid evaluation question configuration") from error
+
+
 def _json_default(value: object) -> object:
     if isinstance(value, datetime):
         return value.isoformat()
@@ -252,5 +379,8 @@ def _parser() -> argparse.ArgumentParser:
     compare.add_argument("--from", dest="earlier_as_of", required=True, help="Earlier ISO cutoff")
     compare.add_argument("--to", dest="later_as_of", required=True, help="Later ISO cutoff")
     compare.add_argument("--json", action="store_true", help="Emit the full structured comparison")
-    subparsers.add_parser("evaluate", help="Print the initial evaluation questions")
+    evaluate = subparsers.add_parser(
+        "evaluate", help="Compare the agent with EURIO-only and semantic-only baselines"
+    )
+    evaluate.add_argument("--output", help="Write the inspectable JSON report to this path")
     return parser

@@ -34,7 +34,7 @@ packages = ["src/kg_agentic"]
 [tool.pytest.ini_options]
 addopts = "-ra --basetemp=.scratch/pytest"
 asyncio_mode = "auto"
-pythonpath = ["src"]
+pythonpath = ["src", "."]
 testpaths = ["tests"]
 markers = ["live: requires EURIO network access, Neo4j, and model credentials"]
 

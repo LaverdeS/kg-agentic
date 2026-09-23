@@ -1,6 +1,8 @@
 [
   {
     "id": "cement-landscape-1",
+    "expected_status": "completed",
+    "requires_multihop": true,
     "question": "Which cement carbon-capture approaches are represented in the inspected CEMCAP corpus, and what must a feasibility study still establish?",
     "as_of": null,
     "reference_identifiers": ["641185", "10.5281/zenodo.2593240", "10.3303/CET1869025"],
@@ -11,6 +13,8 @@
   },
   {
     "id": "cement-capability-1",
+    "expected_status": "completed",
+    "requires_multihop": true,
     "question": "What does the inspected public corpus support about capabilities linked to CEMCAP, and what remains unverified?",
     "as_of": null,
     "reference_identifiers": ["641185", "10.3303/CET1869025"],
@@ -21,6 +25,8 @@
   },
   {
     "id": "cement-comparables-1",
+    "expected_status": "completed",
+    "requires_multihop": true,
     "question": "Which CEMCAP and LEILAC2 evidence can be compared for a retrofit feasibility study, and which boundaries make a direct ranking unsafe?",
     "as_of": null,
     "reference_identifiers": ["641185", "884170"],
@@ -31,6 +37,8 @@
   },
   {
     "id": "cement-partners-1",
+    "expected_status": "completed",
+    "requires_multihop": true,
     "question": "Which cross-project organisations are candidates for complementary validation work, and what evidence would change the shortlist?",
     "as_of": null,
     "reference_identifiers": ["641185", "884170", "101096691"],
@@ -41,6 +49,7 @@
   },
   {
     "id": "cement-gap-1",
+    "expected_status": "completed",
     "question": "What decision-critical gap remains in the inspected public corpus for a cement retrofit shortlist, and how should it be validated?",
     "as_of": null,
     "reference_identifiers": ["641185", "884170", "101096691"],
@@ -51,6 +60,7 @@
   },
   {
     "id": "cement-historical-1",
+    "expected_status": "completed",
     "question": "What pilot-scale ammonia-capture evidence was demonstrably public by the start of 2019?",
     "as_of": "2019-01-01",
     "reference_identifiers": ["10.3303/CET1869025", "641185"],
@@ -61,6 +71,7 @@
   },
   {
     "id": "cement-historical-2",
+    "expected_status": "abstained",
     "question": "What public cement-capture evidence can be supported at the end of 2018?",
     "as_of": "2018-12-31",
     "reference_identifiers": ["10.5281/zenodo.2593240", "10.3303/CET1869025"],
@@ -71,6 +82,7 @@
   },
   {
     "id": "cement-change-1",
+    "expected_status": "completed",
     "question": "Between the start of 2019 and the start of 2020, which retained evidence versions became newly eligible, and what does that establish?",
     "as_of": "2020-01-01",
     "comparison_from": "2019-01-01",

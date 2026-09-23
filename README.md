@@ -90,7 +90,7 @@ Useful checks and alternate output are:
 uv run kg-agentic investigate --json
 uv run kg-agentic investigate --as-of 2019-01-01
 uv run kg-agentic compare --from 2019-01-01 --to 2020-01-01
-uv run kg-agentic evaluate
+uv run kg-agentic evaluate --output var/evaluations/cement-retrofit-v1.json
 uv run pytest
 uv run ruff check .
 uv run pyright
@@ -129,7 +129,7 @@ the CLI. The workbench then shows only that run's returned subgraph, citations,
 source-qualified metadata, and public activity stages. Selected graph context can
 guide a follow-up but never becomes evidence. Conversation memory is in-process,
 thread-scoped, and cleared by reset or server restart. The interface names the
-current bounded scope—three projects and ten indexed source versions—rather than
+current bounded scope—three projects and eleven indexed source versions—rather than
 implying exhaustive CORDIS coverage.
 
 After starting the local server, `npm run ui:test` runs deterministic browser
@@ -147,6 +147,14 @@ because it incurs API calls:
 $env:RUN_LIVE = "1"
 uv run pytest tests/test_live_stack.py -q
 ```
+
+The evaluation command runs the same frozen, bounded corpus through the full agent,
+an EURIO-only path, and a semantic-only path. It saves raw outputs, source-version
+identifiers, scores, latency, model usage, and failures in the requested report.
+Its automated citation and support checks are useful diagnostics rather than proof
+of factual truth or consulting usefulness; independent human review remains pending.
+See [the evaluation method](docs/evaluations/evaluation-method.md) for the exact
+baseline limits and what a report does and does not establish.
 
 ## Recommendations that can be audited
 

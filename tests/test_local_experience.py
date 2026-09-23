@@ -269,8 +269,8 @@ def test_health_reports_live_only_tools_and_recorded_route_is_absent() -> None:
         "coverage": {
             "projectRecords": 3,
             "resultMetadataRecords": 6,
-            "fullTextRecords": 1,
-            "sourceVersions": 10,
+                "fullTextRecords": 2,
+                "sourceVersions": 11,
         },
     }
 

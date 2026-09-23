@@ -2,6 +2,7 @@ from datetime import UTC, datetime
 
 import pytest
 
+from kg_agentic.application.evaluation import EvaluationQuestion, evaluate_questions
 from kg_agentic.application.investigation import InvestigationAgent
 from kg_agentic.knowledge.models import (
     DraftBrief,
@@ -115,3 +116,35 @@ async def test_non_cordis_fixture_applies_the_same_historical_eligibility_rule()
     assert after_publication.status == "completed"
     assert after_publication.brief is not None
     assert any("source evidence only" in gap for gap in after_publication.gaps)
+
+
+@pytest.mark.asyncio
+async def test_non_cordis_fixture_runs_through_the_shared_evaluation_seam() -> None:
+    agent = InvestigationAgent(
+        structural_source=BridgeGraph(),
+        evidence_memory=InspectionMemory(),
+        brief_generator=MaintenanceBrief(),
+        project_iris=("asset:bridge-42",),
+        corpus_id="roads:bridge-inspections:v1",
+    )
+
+    async def run(request):
+        return await agent.investigate(request), {"total_tokens": 0}
+
+    report = await evaluate_questions(
+        questions=(
+            EvaluationQuestion(
+                id="bridge-maintenance",
+                question="What maintenance should be commissioned?",
+                as_of=datetime(2026, 1, 1, tzinfo=UTC),
+                reference_identifiers=("bridge-42",),
+                expected_status="completed",
+            ),
+        ),
+        runners={"fixture_agent": run},
+        baseline_notes={"fixture_agent": "Synthetic roads-inspection fixture."},
+    )
+
+    assert report.has_failures is False
+    assert report.runs[0].status == "completed"
+    assert report.runs[0].metrics["citation_correctness"] == 1.0
