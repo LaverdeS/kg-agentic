@@ -192,6 +192,7 @@ class HistoricalBriefGenerator:
 
 @pytest.mark.asyncio
 async def test_current_investigation_returns_supported_cited_brief() -> None:
+    progress: list[tuple[str, int, int]] = []
     agent = InvestigationAgent(
         structural_source=RecordedStructuralSource(),
         evidence_memory=RecordedEvidenceMemory(),
@@ -203,7 +204,10 @@ async def test_current_investigation_returns_supported_cited_brief() -> None:
     result = await agent.investigate(
         InvestigationRequest(
             question="Which capture pathways merit a cement retrofit feasibility study?"
-        )
+        ),
+        on_progress=lambda stage, paths, evidence: progress.append(
+            (stage, len(paths), len(evidence))
+        ),
     )
 
     assert result.status == "completed"
@@ -211,6 +215,7 @@ async def test_current_investigation_returns_supported_cited_brief() -> None:
     assert result.brief is not None
     assert result.brief.claims[0].citations[0].source_url.endswith("/reporting")
     assert result.brief.claims[0].citations[0].evidence_id == "cordis:101096691:record:v1"
+    assert progress == [("retrieved_paths", 1, 0), ("retrieved_evidence", 1, 1)]
     assert [step.action for step in result.trace] == [
         "plan",
         "retrieve_structural_paths",

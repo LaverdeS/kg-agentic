@@ -1,7 +1,7 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { getHealth, resetConversation, streamConversation } from "./api";
-import type { Citation, ConversationMessage, Scene, SceneNode, Statement, Trace } from "./types";
+import type { Citation, ConversationMessage, Scene, SceneEdge, SceneNode, Statement, Trace } from "./types";
 import "./style.css";
 
 const allKinds = ["project", "organization", "role", "output", "evidence", "entity"];
@@ -19,20 +19,31 @@ const emptyScene: Scene = {
 };
 const starterPrompts = [
   { label: "Explain retrofit", question: "What is retrofit in this context?" },
-  { label: "Workspace limits", question: "What can this workspace verify, and what can’t it know?" },
+  { label: "What is indexed?", question: "How many project and source records are indexed right now?" },
   { label: "Compare projects", question: "Compare the available CEMCAP and LEILAC2 evidence for a retrofit feasibility study." },
   { label: "Decision gap", question: "What evidence gap matters most before choosing a cement retrofit pathway?" },
 ];
+const activityTitles: Record<string, string> = {
+  interpreting: "Reading your question",
+  planned: "Planning the research",
+  retrieved_path: "Connected research paths",
+  evidence_found: "Found public sources",
+  claim_supported: "Checked the answer",
+  inspected: "Read current workspace facts",
+  answered: "Answered without research tools",
+  focused: "Focused the current map",
+};
 type ResearchView = "graph" | "sources" | "trace";
 const GraphCanvas = lazy(() => import("./GraphCanvas").then((module) => ({
   default: module.GraphCanvas,
 })));
 
-function hasSameGraph(current: Scene, next: Pick<Scene, "nodes" | "edges">) {
-  return current.nodes.length === next.nodes.length
-    && current.edges.length === next.edges.length
-    && current.nodes.every((node, index) => node.id === next.nodes[index]?.id)
-    && current.edges.every((edge, index) => edge.id === next.edges[index]?.id);
+function mergeGraph(current: Scene, next: Pick<Scene, "nodes" | "edges">): Pick<Scene, "nodes" | "edges"> {
+  const nodes = new Map(current.nodes.map((node) => [node.id, node]));
+  const edges = new Map(current.edges.map((edge) => [edge.id, edge]));
+  next.nodes.forEach((node) => nodes.set(node.id, node));
+  next.edges.forEach((edge) => edges.set(edge.id, edge));
+  return { nodes: [...nodes.values()], edges: [...edges.values()] };
 }
 
 function App() {
@@ -45,12 +56,18 @@ function App() {
   const [question, setQuestion] = useState("");
   const [asOf, setAsOf] = useState("");
   const [toolCount, setToolCount] = useState<number | null>(null);
-  const [coverage, setCoverage] = useState({ projectRecords: 0, sourceVersions: 0 });
+  const [coverage, setCoverage] = useState({ projectRecords: 0, resultMetadataRecords: 0, fullTextRecords: 0, sourceVersions: 0 });
   const [activities, setActivities] = useState<Trace[]>([]);
   const [state, setState] = useState<"loading" | "ready" | "running" | "failed">("loading");
   const [error, setError] = useState<string | null>(null);
   const [guideOpen, setGuideOpen] = useState(false);
   const [researchView, setResearchView] = useState<ResearchView>("graph");
+  const [mapRuns, setMapRuns] = useState(0);
+  const [latestNodeIds, setLatestNodeIds] = useState(new Set<string>());
+  const [activeNodeIds, setActiveNodeIds] = useState(new Set<string>());
+  const [viewCommand, setViewCommand] = useState<{ action: "fit" | "in" | "out"; token: number }>({ action: "fit", token: 0 });
+  const mapCutoff = useRef<string | null>(null);
+  const activityTimer = useRef<number | null>(null);
   const threadId = useRef(crypto.randomUUID());
   const guideButtonRef = useRef<HTMLButtonElement>(null);
 
@@ -67,6 +84,8 @@ function App() {
       });
   }, []);
 
+  useEffect(() => () => { if (activityTimer.current !== null) window.clearTimeout(activityTimer.current); }, []);
+
   const selected = useMemo(
     () => scene.nodes.find((node) => node.id === selectedId) ?? null,
     [scene.nodes, selectedId],
@@ -77,12 +96,16 @@ function App() {
   );
   const searchMatches = useMemo(
     () => search.trim()
-      ? scene.nodes.filter((node) => node.label.toLowerCase().includes(search.toLowerCase()))
+      ? scene.nodes.filter((node) => `${node.label} ${node.id}`.toLowerCase().includes(search.toLowerCase()))
       : [],
     [scene.nodes, search],
   );
   const indexNodes = search.trim() ? searchMatches : scene.nodes;
+  const selectedConnections = selectedId
+    ? scene.edges.filter((edge) => edge.source === selectedId || edge.target === selectedId)
+    : [];
   const messages = scene.conversation?.messages ?? [];
+  const runningLabel = activityTitles[activities.at(-1)?.action ?? ""] ?? "Mira is working";
   const hasStructuredResult = scene.conversation?.intent === "investigation";
   const highlightedNodeIds = useMemo(() => {
     const highlighted = new Set<string>();
@@ -116,6 +139,7 @@ function App() {
     setVisibleKinds(new Set(allKinds));
     setVisibleRelationshipTypes(new Set(relationshipTypes));
     setSearch("");
+    setViewCommand((current) => ({ action: "fit", token: current.token + 1 }));
   };
   const toggle = (value: string, update: React.Dispatch<React.SetStateAction<Set<string>>>) => {
     update((current) => {
@@ -126,9 +150,13 @@ function App() {
   };
   const run = async (requestedQuestion = question, contextId = selectedId) => {
     if (!requestedQuestion.trim()) return;
+    const nextCutoff = asOf || null;
+    const sameCutoff = mapRuns > 0 && mapCutoff.current === nextCutoff;
+    let sawGraphDelta = false;
     setState("running");
     setError(null);
     setActivities([]);
+    setActiveNodeIds(new Set());
     try {
       const nextScene = await streamConversation(
         {
@@ -137,11 +165,25 @@ function App() {
           selectedNodeIds: contextId ? [contextId] : [],
           asOf: asOf || null,
         },
-        (trace) => setActivities((current) => [...current, trace]),
+        (trace) => {
+          setActivities((current) => [...current, trace]);
+          if (trace.action === "claim_supported" && trace.nodeIds?.length) {
+            setActiveNodeIds(new Set(trace.nodeIds));
+            if (activityTimer.current !== null) window.clearTimeout(activityTimer.current);
+            activityTimer.current = window.setTimeout(() => setActiveNodeIds(new Set()), 2200);
+          }
+        },
         (delta) => {
-          setScene((current) => !hasSameGraph(current, delta)
-            ? { ...current, ...delta, question: requestedQuestion }
-            : current);
+          sawGraphDelta = true;
+          setActiveNodeIds(new Set(delta.nodes.map((node) => node.id)));
+          if (activityTimer.current !== null) window.clearTimeout(activityTimer.current);
+          activityTimer.current = window.setTimeout(() => setActiveNodeIds(new Set()), 2200);
+          setScene((current) => {
+            const graph = sameCutoff ? mergeGraph(current, delta) : delta;
+            return sameCutoff
+              ? { ...current, ...graph, question: requestedQuestion, brief: null, trace: [], gaps: [] }
+              : { ...emptyScene, ...graph, question: requestedQuestion, conversation: current.conversation };
+          });
           setResearchView("graph");
         },
       );
@@ -158,15 +200,33 @@ function App() {
           if (match) select(match.id, "graph");
         }
       } else {
-        setScene((current) => hasSameGraph(current, nextScene)
-          ? { ...current, question: nextScene.question, conversation: nextScene.conversation }
-          : nextScene);
-        setVisibleRelationshipTypes(new Set(nextScene.edges.map((edge) => edge.label)));
+        setScene((current) => {
+          const graph = sameCutoff ? mergeGraph(current, nextScene) : nextScene;
+          const evidence = sameCutoff
+            ? [...new Map([...current.evidence, ...nextScene.evidence].map((item) => [item.id, item])).values()]
+            : nextScene.evidence;
+          return { ...nextScene, ...graph, evidence };
+        });
+        setLatestNodeIds(new Set(nextScene.nodes.map((node) => node.id)));
+        setMapRuns((count) => sameCutoff ? count + 1 : 1);
+        mapCutoff.current = nextCutoff;
+        setVisibleRelationshipTypes((current) => new Set([...current, ...nextScene.edges.map((edge) => edge.label)]));
+        if (!sameCutoff) { setSelectedId(null); setPinnedId(null); }
         setResearchView("graph");
       }
       setQuestion("");
       setState("ready");
     } catch (nextError) {
+      if (sawGraphDelta) {
+        setScene(sameCutoff ? scene : { ...emptyScene, conversation: scene.conversation });
+        if (!sameCutoff) {
+          setMapRuns(0);
+          setLatestNodeIds(new Set());
+          setSelectedId(null);
+          setPinnedId(null);
+        }
+      }
+      setActiveNodeIds(new Set());
       setError(nextError instanceof Error ? nextError.message : "The investigation failed.");
       setState("failed");
     }
@@ -186,7 +246,13 @@ function App() {
       await resetConversation(threadId.current);
       setError(null);
       setActivities([]);
-      setScene((current) => ({ ...current, conversation: undefined }));
+      setScene(emptyScene);
+      setMapRuns(0);
+      setLatestNodeIds(new Set());
+      setActiveNodeIds(new Set());
+      mapCutoff.current = null;
+      setSelectedId(null);
+      setPinnedId(null);
     } catch (nextError) {
       setError(nextError instanceof Error ? nextError.message : "The conversation reset failed.");
     }
@@ -198,8 +264,8 @@ function App() {
     <main className="app-shell">
       <header className="topbar">
         <div className="brand"><span className="eyebrow">KG / AGENTIC</span><h1>Evidence Workbench</h1><p>Conversation, graph paths, and sources in one research surface.</p></div>
-        <div className="scope-note"><span>ACTIVE SCOPE</span><b>Cement decarbonisation</b><small>{coverage.projectRecords} projects · {coverage.sourceVersions} indexed source versions</small></div>
-        <div className="header-actions"><button ref={guideButtonRef} className="text-button" onClick={() => setGuideOpen(true)}>Guide</button><div className="status"><span className={state === "running" ? "dot working" : "dot"} />{state === "running" ? "Interpreting your question" : `${toolCount ?? "…"} bounded evidence tool`}</div></div>
+        <div className="scope-note"><span>ACTIVE SCOPE</span><b>Cement decarbonisation</b><small>{coverage.projectRecords} project records / {coverage.sourceVersions} source versions</small></div>
+        <div className="header-actions"><button ref={guideButtonRef} className="text-button" onClick={() => setGuideOpen(true)}>Guide</button><div className="status" role="status"><span className={state === "running" ? "dot working" : "dot"} />{state === "running" ? runningLabel : `${toolCount ?? "..."} research tools available`}</div></div>
       </header>
       {guideOpen && <Guide onDismiss={dismissGuide} onStart={startGuidedExample} />}
       <section className="workspace" aria-label="Evidence research workspace">
@@ -211,7 +277,7 @@ function App() {
             {hasStructuredResult && scene.brief ? (
               <section className="answer"><div className="answer-heading"><span className="eyebrow">EVIDENCE-BACKED BRIEF</span><button className="text-button" onClick={() => setResearchView("sources")}>Inspect {scene.evidence.length} sources →</button></div><BriefPanel brief={scene.brief} onCitation={(citation) => select(`evidence:${citation.evidence_id}`, "sources")} /></section>
             ) : messages.length === 0 ? (
-              <section className="first-prompt"><span className="eyebrow">START HERE</span><h3>Bring a question, not a command.</h3><p>Ask for a definition, explore what this corpus can support, or request an evidence-backed decision. The workspace will show when the graph is—and is not—being used.</p></section>
+              <section className="first-prompt"><span className="eyebrow">START HERE</span><h3>Meet Mira. Bring a question.</h3><p>Ask for a definition, explore what this corpus can support, or request an evidence-backed decision. The workspace will show when the graph is—and is not—being used.</p></section>
             ) : null}
           </div>
           <section className="composer">
@@ -223,15 +289,16 @@ function App() {
         </section>
 
         <section className="research-workbench" aria-label="Graph, sources, and tool trace">
-          <header className="research-header"><div><span className="eyebrow">RESEARCH CONTEXT</span><h2>{scene.nodes.length ? `${scene.nodes.length} nodes · ${scene.edges.length} relationships` : "Waiting for an evidence run"}</h2></div><div className="view-tabs" role="group" aria-label="Research view">{(["graph", "sources", "trace"] as ResearchView[]).map((view) => <button key={view} aria-pressed={researchView === view} onClick={() => setResearchView(view)}>{view[0].toUpperCase() + view.slice(1)}{view === "sources" && scene.evidence.length ? ` ${scene.evidence.length}` : ""}</button>)}</div></header>
+          <header className="research-header"><div><span className="eyebrow">RESEARCH MAP</span><h2>{scene.nodes.length ? `${scene.nodes.length} ${scene.nodes.length === 1 ? "element" : "elements"} / ${scene.edges.length} ${scene.edges.length === 1 ? "link" : "links"}` : "Waiting for an evidence run"}</h2>{mapRuns > 0 && <small>{mapRuns} evidence {mapRuns === 1 ? "question" : "questions"} in this map{mapCutoff.current ? ` / public by ${mapCutoff.current}` : ""}</small>}</div><div className="view-tabs" role="group" aria-label="Research view">{(["graph", "sources", "trace"] as ResearchView[]).map((view) => <button key={view} aria-pressed={researchView === view} onClick={() => setResearchView(view)}>{view[0].toUpperCase() + view.slice(1)}{view === "sources" && scene.evidence.length ? ` ${scene.evidence.length}` : ""}</button>)}</div></header>
 
           {researchView === "graph" && <section className="graph-view">
-            <div className="graph-stage">
-              {scene.nodes.length > 0 && <Suspense fallback={<div className="graph-loading">Rendering returned paths…</div>}><GraphCanvas scene={scene} selectedId={selectedId} pinnedId={pinnedId} visibleKinds={visibleKinds} visibleRelationshipTypes={visibleRelationshipTypes} highlightedNodeIds={highlightedNodeIds} onSelect={(id) => select(id)} /></Suspense>}
+            <div className={activeNodeIds.size ? "graph-stage is-updating" : "graph-stage"}>
+              {scene.nodes.length > 0 && <Suspense fallback={<div className="graph-loading">Rendering returned paths...</div>}><GraphCanvas scene={scene} selectedId={selectedId} pinnedId={pinnedId} visibleKinds={visibleKinds} visibleRelationshipTypes={visibleRelationshipTypes} highlightedNodeIds={highlightedNodeIds} latestNodeIds={latestNodeIds} activeNodeIds={activeNodeIds} viewCommand={viewCommand} onSelect={(id) => select(id)} /></Suspense>}
               {scene.nodes.length === 0 && <div className="graph-empty"><span className="eyebrow">LIVE SUBGRAPH</span><h3>No graph needed yet.</h3><p>An evidence question reveals only the paths and sources returned by that run—not the whole database.</p></div>}
-              {scene.nodes.length > 0 && <><div className="graph-tools"><label>Find in this result<input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Project, source, organisation" /></label>{selected && <button className="selection-chip" onClick={() => setResearchView("sources")}>Inspect {selected.label} →</button>}</div><div className="graph-legend" aria-label="Graph legend">{allKinds.slice(0, 5).map((kind) => <label key={kind}><input type="checkbox" checked={visibleKinds.has(kind)} onChange={() => toggle(kind, setVisibleKinds)} /><i className={`legend-mark ${kind}`} />{kind}</label>)}</div><div className="relationship-row" aria-label="Relationship filters">{relationshipTypes.map((relationship) => <label key={relationship}><input type="checkbox" checked={visibleRelationshipTypes.has(relationship)} onChange={() => toggle(relationship, setVisibleRelationshipTypes)} />{relationship.replace(/([A-Z])/g, " $1")}</label>)}</div><button className="reset-scene" onClick={resetScene}>Reset view</button></>}
+              {activeNodeIds.size > 0 && <div className="graph-live-status" role="status"><i />{activities.at(-1)?.action === "claim_supported" ? `Mira checked ${activeNodeIds.size} cited sources` : `Mira is tracing ${activeNodeIds.size} connected elements`}</div>}
+              {scene.nodes.length > 0 && <><GraphTools scene={scene} selected={selected} selectedId={selectedId} selectedConnections={selectedConnections} search={search} searchMatches={searchMatches} visibleKinds={visibleKinds} visibleRelationshipTypes={visibleRelationshipTypes} relationshipTypes={relationshipTypes} onSearch={setSearch} onSelect={(id) => select(id)} onInspect={() => setResearchView("sources")} onAsk={(label) => { setQuestion(`What does the available evidence say about ${label}?`); document.getElementById("question")?.focus(); }} onToggle={toggle} setVisibleKinds={setVisibleKinds} setVisibleRelationshipTypes={setVisibleRelationshipTypes} onReset={resetScene} onZoom={(action) => setViewCommand((current) => ({ action, token: current.token + 1 }))} /><div className="graph-key" aria-label="Graph colours"><span><i className="project" />Projects</span><span><i className="evidence" />Sources</span><span><i className="other" />Other elements</span></div></>}
             </div>
-            <p className="surface-note">Live EURIO paths are combined with the bounded local Graphiti evidence memory. Selection guides follow-ups; it is never evidence.</p>
+            <p className="surface-note">This map grows as you ask evidence questions. Brighter elements belong to the latest answer; older paths remain available to explore. A new historical cutoff starts a separate map.</p>
           </section>}
 
           {researchView === "sources" && <section className="sources-view">
@@ -240,13 +307,67 @@ function App() {
           </section>}
 
           {researchView === "trace" && <section className="trace-view">
-            <div><span className="eyebrow">PUBLIC TOOL ACTIVITY</span>{activities.length ? <ol className="activity-list">{activities.map((trace, index) => <li key={`${trace.action}-${index}`}><b>{trace.action.replaceAll("_", " ")}</b>{trace.count !== undefined && <span>{trace.count}</span>}<p>{trace.detail}</p></li>)}</ol> : <EmptyResearch title="No tool activity" text="A normal conversation should leave this trace empty. Evidence runs disclose their public stages here." />}</div>
-            <div className="limits"><span className="eyebrow">KNOWN LIMITS</span><p>This is a bounded experiment, not an exhaustive CORDIS search. Result records are mostly metadata; one reviewed publication supplies full text.</p>{scene.gaps.map((gap) => <p key={gap}>{gap}</p>)}</div>
+            <div><span className="eyebrow">PUBLIC TOOL ACTIVITY</span>{activities.length ? <ol className="activity-list">{activities.map((trace, index) => <li key={`${trace.action}-${index}`}><b>{activityTitles[trace.action] ?? trace.action.replaceAll("_", " ")}</b>{trace.count !== undefined && <span>{trace.count} {trace.action === "evidence_found" ? "sources" : trace.action === "retrieved_path" ? "paths" : "claims"}</span>}{trace.detail && <p>{trace.detail}</p>}</li>)}</ol> : <EmptyResearch title="No tool activity" text="A normal conversation should leave this trace empty. Evidence runs disclose their public stages here." />}</div>
+            <div className="limits"><span className="eyebrow">KNOWN LIMITS</span><p>This is a bounded research corpus, not all of CORDIS. It currently indexes {coverage.projectRecords} project records, {coverage.resultMetadataRecords} result metadata records, and {coverage.fullTextRecords} retained public-document versions. Metadata does not establish technical performance.</p>{scene.gaps.map((gap) => <p key={gap}>{gap}</p>)}</div>
           </section>}
         </section>
       </section>
     </main>
   );
+}
+
+interface GraphToolsProps {
+  scene: Scene;
+  selected: SceneNode | null;
+  selectedId: string | null;
+  selectedConnections: SceneEdge[];
+  search: string;
+  searchMatches: SceneNode[];
+  visibleKinds: Set<string>;
+  visibleRelationshipTypes: Set<string>;
+  relationshipTypes: string[];
+  onSearch: (value: string) => void;
+  onSelect: (id: string) => void;
+  onInspect: () => void;
+  onAsk: (label: string) => void;
+  onToggle: (value: string, update: React.Dispatch<React.SetStateAction<Set<string>>>) => void;
+  setVisibleKinds: React.Dispatch<React.SetStateAction<Set<string>>>;
+  setVisibleRelationshipTypes: React.Dispatch<React.SetStateAction<Set<string>>>;
+  onReset: () => void;
+  onZoom: (action: "fit" | "in" | "out") => void;
+}
+
+function GraphTools({ scene, selected, selectedId, selectedConnections, search, searchMatches, visibleKinds, visibleRelationshipTypes, relationshipTypes, onSearch, onSelect, onInspect, onAsk, onToggle, setVisibleKinds, setVisibleRelationshipTypes, onReset, onZoom }: GraphToolsProps) {
+  return <>
+    <div className="graph-tools">
+      <label htmlFor="graph-search">Find in this map</label>
+      <input id="graph-search" value={search} onChange={(event) => onSearch(event.target.value)} placeholder="Project, source, organisation" />
+      {search.trim() && <div className="graph-search-results" aria-label="Matching graph elements">
+        {searchMatches.slice(0, 7).map((node) => <button key={node.id} onClick={() => { onSelect(node.id); onSearch(""); }}><span>{node.kind}</span>{node.label}</button>)}
+        {searchMatches.length === 0 && <p>No matching element in this map.</p>}
+      </div>}
+    </div>
+    <div className="graph-zoom" aria-label="Graph navigation">
+      <button aria-label="Zoom in" onClick={() => onZoom("in")}>+</button>
+      <button aria-label="Zoom out" onClick={() => onZoom("out")}>-</button>
+      <button onClick={() => onZoom("fit")}>Fit</button>
+      <button onClick={onReset}>Reset</button>
+    </div>
+    {selected && <aside className="graph-inspector" id="details" tabIndex={-1} aria-label="Selected graph element">
+      <span className="eyebrow">{selected.kind} / {selectedConnections.length} links</span>
+      <h3>{selected.label}</h3>
+      <p>{selected.kind === "evidence" ? "A retrieved public source linked to the elements it describes." : "Follow a connection to see how this element relates to the evidence."}</p>
+      <div className="graph-neighbors">{selectedConnections.slice(0, 5).map((edge) => {
+        const neighbor = scene.nodes.find((node) => node.id === (edge.source === selectedId ? edge.target : edge.source));
+        return neighbor && <button key={edge.id} onClick={() => onSelect(neighbor.id)}><span>{edge.label.replace(/([A-Z])/g, " $1")}</span>{neighbor.label}</button>;
+      })}</div>
+      <div className="inspector-actions"><button onClick={() => onAsk(selected.label)}>Ask about this</button><button onClick={onInspect}>Details and sources</button></div>
+    </aside>}
+    <details className="graph-filters"><summary>Filter elements and links</summary>
+      <div className="graph-legend" aria-label="Graph legend">{allKinds.slice(0, 5).map((kind) => <label key={kind}><input type="checkbox" checked={visibleKinds.has(kind)} onChange={() => onToggle(kind, setVisibleKinds)} /><i className={`legend-mark ${kind}`} />{kind}</label>)}</div>
+      <div className="relationship-row" aria-label="Relationship filters">{relationshipTypes.map((relationship) => <label key={relationship}><input type="checkbox" checked={visibleRelationshipTypes.has(relationship)} onChange={() => onToggle(relationship, setVisibleRelationshipTypes)} />{relationship.replace(/([A-Z])/g, " $1")}</label>)}</div>
+    </details>
+  </>;
 }
 
 function Guide({ onDismiss, onStart }: { onDismiss: () => void; onStart: () => void }) {
@@ -266,7 +387,7 @@ function Guide({ onDismiss, onStart }: { onDismiss: () => void; onStart: () => v
 
 function ConversationPanel({ messages }: { messages: ConversationMessage[] }) {
   if (!messages.length) return null;
-  return <section className="conversation" aria-label="Conversation history">{messages.map((message, index) => <article key={`${message.role}-${index}`} className={message.role}><b>{message.role === "user" ? "You" : "Evidence Navigator"}</b><p>{message.content}</p></article>)}</section>;
+  return <section className="conversation" aria-label="Conversation history">{messages.map((message, index) => <article key={`${message.role}-${index}`} className={message.role}><b>{message.role === "user" ? "You" : "Mira"}</b><p>{message.content}</p></article>)}</section>;
 }
 
 function BriefPanel({ brief, onCitation }: { brief: NonNullable<Scene["brief"]>; onCitation: (citation: Citation) => void }) {

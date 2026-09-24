@@ -18,7 +18,11 @@ from kg_agentic.application.evaluation import (
     EvaluationReport,
     evaluate_questions,
 )
-from kg_agentic.application.investigation import InvestigationAgent, compare_investigations
+from kg_agentic.application.investigation import (
+    InvestigationAgent,
+    InvestigationProgress,
+    compare_investigations,
+)
 from kg_agentic.infrastructure.eurio import (
     EurioEvidenceSource,
     EurioStructuralSource,
@@ -77,6 +81,7 @@ async def investigate_cement_slice(
     corpus_id: str = CORPUS_ID,
     group_id: str = GROUP_ID,
     project_iris: tuple[str, ...] = PROJECT_IRIS,
+    on_progress: InvestigationProgress | None = None,
 ) -> tuple[InvestigationResult, dict[str, int]]:
     """Run a current or strict historical investigation through the concrete live adapters."""
     runtime = build_runtime(settings)
@@ -98,7 +103,7 @@ async def investigate_cement_slice(
             corpus_id=group_id,
             evidence_limit=settings.evidence_limit,
         )
-        result = await agent.investigate(request)
+        result = await agent.investigate(request, on_progress=on_progress)
         return result, generator.last_usage
     finally:
         await runtime.close()

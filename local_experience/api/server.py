@@ -8,6 +8,7 @@ import gzip
 import json
 import mimetypes
 import os
+from dataclasses import asdict
 from datetime import UTC, date, datetime, time
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -18,15 +19,17 @@ from dotenv import load_dotenv
 
 from kg_agentic.application.cement import CORPUS_ID
 from kg_agentic.application.conversation import ConversationDecision, ConversationModelRequest
+from kg_agentic.application.investigation import ProgressStage
 from kg_agentic.infrastructure.bootstrap import investigate_cement_slice
 from kg_agentic.infrastructure.openai_conversation import generate_conversation_decision
 from kg_agentic.infrastructure.runtime import Settings
-from kg_agentic.knowledge.models import InvestigationRequest
+from kg_agentic.knowledge.models import EvidenceItem, InvestigationRequest, StructuralPath
 from local_experience.api.conversation import (
     ConversationRequest,
     ConversationRunner,
+    EventEmitter,
 )
-from local_experience.api.scene import project_scene, scene_payload
+from local_experience.api.scene import project_graph, project_scene, scene_payload
 
 HOST = "127.0.0.1"
 PORT = 8000
@@ -112,12 +115,17 @@ class ExplorerHandler(BaseHTTPRequestHandler):
             },
         )
         try:
-            run = CONVERSATIONS.run(conversation)
+            run = CONVERSATIONS.run(conversation, on_event=self._event)
             for event, payload in run.events:
                 self._event(event, payload)
             self._event("completed", run.scene)
+        except (BrokenPipeError, ConnectionResetError):
+            return  # The browser left while a live run was still streaming.
         except Exception as error:  # Surface real core failures; never replace them with demo data.
-            self._event("failed", {"message": str(error), "errorType": type(error).__name__})
+            try:
+                self._event("failed", {"message": str(error), "errorType": type(error).__name__})
+            except (BrokenPipeError, ConnectionResetError):
+                return
 
     def _event(self, event: str, payload: dict[str, object]) -> None:
         encoded = json.dumps(payload, ensure_ascii=False)
@@ -187,11 +195,30 @@ class ExplorerHandler(BaseHTTPRequestHandler):
         """Keep browser polling and streaming noise out of the terminal."""
 
 
-def _live_payload(question: str, as_of: str | None = None) -> dict[str, object]:
+def _live_payload(
+    question: str, as_of: str | None = None, emit: EventEmitter | None = None
+) -> dict[str, object]:
     if not question.strip():
         raise ValueError("A live investigation needs a question.")
     load_dotenv()
     settings = Settings.from_environment()
+
+    def on_progress(
+        stage: ProgressStage, paths: tuple[StructuralPath, ...], evidence: tuple[EvidenceItem, ...]
+    ) -> None:
+        if emit is None:
+            return
+        action = "retrieved_path" if stage == "retrieved_paths" else "evidence_found"
+        emit(
+            "activity",
+            {"action": action, "count": len(paths) if stage == "retrieved_paths" else len(evidence)},
+        )
+        nodes, edges = project_graph(paths, evidence)
+        emit(
+            "graph_delta",
+            {"nodes": [asdict(node) for node in nodes], "edges": [asdict(edge) for edge in edges]},
+        )
+
     result, usage = asyncio.run(
         investigate_cement_slice(
             settings,
@@ -201,6 +228,7 @@ def _live_payload(question: str, as_of: str | None = None) -> dict[str, object]:
                 if as_of
                 else None,
             ),
+            on_progress=on_progress if emit else None,
         )
     )
     payload = scene_payload(project_scene(result, mode="live"))
@@ -261,6 +289,7 @@ def _conversation_request(payload: dict[str, Any]) -> ConversationRequest:
 CONVERSATIONS = ConversationRunner(
     _live_payload,
     _conversation_decision,
+    _local_corpus_coverage,
 )
 
 

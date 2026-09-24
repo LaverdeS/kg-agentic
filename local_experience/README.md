@@ -1,67 +1,71 @@
-# Local evidence explorer
+# Local Evidence Workbench
 
-This optional browser workspace is a live entry point to the existing
-investigation composition. It never serves a saved graph, a recorded brief, or
-a replayed source list. The first screen is intentionally empty: a graph,
-retrieved evidence, and a structured brief appear only when a new live run
-returns them.
+This optional browser workspace lets you talk with Mira, investigate connected
+public research, and inspect the sources behind a decision. It calls the live
+EURIO and local Graphiti/Neo4j investigation path. The running product has no
+recorded or synthetic answer mode.
 
-## Run it
+## Run locally
+
+From the repository root, with Neo4j running and the environment configured:
 
 ```powershell
+npm install
 npm run ui:build
 .\.venv\Scripts\python.exe -m local_experience.api.server
 ```
 
-Open `http://127.0.0.1:8000`. Set `OPENAI_API_KEY`, `NEO4J_PASSWORD`, and the
-other usual core settings before asking an investigation question. If EURIO,
-Neo4j, or the model is unavailable, the explorer reports that real failure; it
-does not substitute demo data.
+Open `http://127.0.0.1:8000`. See the root README for ingestion and credentials.
+The API listens on localhost only. It reports model or dependency failures in
+the conversation instead of replacing them with a demo answer.
 
-## What the agent does
+## What Mira can do
 
-The local LangGraph wrapper has three explicitly bound actions:
+- Talk naturally, explain terms, and help frame a useful research question.
+- Inspect the current source-version manifest and the graph built in this
+  conversation. Counts are read when requested, not memorised in the prompt.
+- Focus an element already visible in the map.
+- Run one bounded evidence investigation over the configured corpus. The core
+  support gate controls the cited brief, and the answer names uncertainty and
+  a next validation step.
 
-1. `check_live_services` checks the current local configuration.
-2. `recommend_test_tasks` offers six varied questions for exercising the app.
-3. `investigate_live_graph` invokes the core investigation path afresh and
-   projects only its returned paths, evidence, gaps, and supported brief.
+The two read-only research tools are `inspect_workspace` and
+`investigate_live_graph`. General chat and navigation do not create evidence.
+The map grows across evidence questions in one thread, while each answer and
+its citations refer to that question's retrieval. A different historical
+cutoff starts a separate map. Reset thread clears the chat and map. All memory
+is local to the running process.
 
-The wrapper retains only the short chat thread. A selected graph item can guide
-the next question, but it is not evidence and is never reused as a result. Each
-decision question executes `investigate_live_graph` again. The core remains the
-authority for retrieval and the supported recommendation, so the explorer does
-not add a second unconstrained answer generator.
+During investigation, the stream reports relationship retrieval and source
+retrieval as they complete. The map shows those partial results before the
+brief finishes. Newly returned elements receive a short highlight. The Trace
+tab contains public activity only; it does not reveal private model reasoning.
+Search, neighboring links, fit/zoom, filters, and a non-canvas Sources view
+support exploration. Selection guides a follow-up but is never evidence.
 
-Its operating instruction reflects the product’s purpose: turn European
-research relationships and dated public sources into inspectable decisions;
-separate structural links from source claims; state uncertainty; and never
-treat participation, objectives, or absence of data as proof.
+## Try it
 
-`POST /api/conversations` accepts `threadId`, `question`, optional
-`selectedNodeIds`, and an optional ISO `asOf` cutoff. It emits bounded public
-SSE stages and a `completed` scene. `GET /api/health` reports `live-only` and
-the current tool count. `DELETE /api/conversations/<threadId>` clears local
-chat history. All responses use `Cache-Control: no-store`.
+1. Ask `How many project and source records are indexed right now?` to test
+   the live inspection tool. This should leave the map empty.
+2. Ask `Using the indexed public sources, what evidence should guide a cement
+   retrofit feasibility study?` Watch the graph appear during the run.
+3. Search for a project or source in the map, follow a linked element, then
+   choose **Ask about this** for a follow-up.
+4. Open a citation, compare the source detail with the claim, and inspect
+   **Trace**. Try a historical cutoff and observe its separate map.
 
-## Suggested live tests
-
-- Compare CEMCAP and LEILAC2 for a retrofit decision; name unsafe assumptions.
-- Find evidence that would support or rule out an oxyfuel retrofit pathway.
-- Identify partners worth validating for complementary capture work.
-- Surface the decision-critical gap in a cement retrofit shortlist.
-- Ask what the returned public sources establish versus what remains unverified.
-- Repeat a question with a strict historical date and inspect abstention or gaps.
-
-## Renderer decision
-
-The renderer is Sigma.js 3 + Graphology: it is MIT-licensed, WebGL-first, and
-keeps the scene contract separate from the renderer. A synchronized DOM index
-and inspector provide keyboard access to the returned graph and evidence.
+The corpus is a bounded cement-decarbonisation selection. Project and result
+metadata is distinct from retained public text. Current graph links do not
+automatically become historical facts, and a source gap does not establish
+real-world absence.
 
 ## Checks
 
 ```powershell
 .\.venv\Scripts\python.exe -m pytest tests/test_local_experience.py -q
 npm run ui:build
+npm run ui:test
 ```
+
+The browser tests use controlled SSE responses. Check the real stack separately
+because it uses network services and model credit.

@@ -11,7 +11,13 @@ from datetime import datetime
 from enum import Enum
 from typing import cast
 
-from kg_agentic.knowledge.models import EvidenceItem, InvestigationResult, Relationship
+from kg_agentic.application.cement import LIVE_SEED_PROJECTS
+from kg_agentic.knowledge.models import (
+    EvidenceItem,
+    InvestigationResult,
+    Relationship,
+    StructuralPath,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -48,14 +54,32 @@ class InvestigationScene:
 
 def project_scene(result: InvestigationResult, *, mode: str) -> InvestigationScene:
     """Project only retrieved paths and evidence; never expose storage internals."""
+    nodes, edges = project_graph(result.paths, result.evidence)
+    return InvestigationScene(
+        question=result.plan.question,
+        status=result.status,
+        mode=mode,
+        nodes=nodes,
+        edges=edges,
+        evidence=tuple(_evidence_payload(item) for item in result.evidence),
+        brief=_brief_payload(result),
+        trace=tuple(asdict(step) for step in result.trace),
+        gaps=result.gaps,
+    )
+
+
+def project_graph(
+    paths: tuple[StructuralPath, ...], evidence: tuple[EvidenceItem, ...]
+) -> tuple[tuple[SceneNode, ...], tuple[SceneEdge, ...]]:
+    """Translate a partial or completed retrieval into the same neutral graph contract."""
     nodes: dict[str, SceneNode] = {}
     edges: dict[str, SceneEdge] = {}
 
-    for path in result.paths:
+    for path in paths:
         for relationship in path.relationships:
             _add_relationship(nodes, edges, relationship)
 
-    for item in result.evidence:
+    for item in evidence:
         evidence_id = f"evidence:{item.id}"
         nodes[evidence_id] = SceneNode(
             id=evidence_id,
@@ -93,17 +117,7 @@ def project_scene(result: InvestigationResult, *, mode: str) -> InvestigationSce
                 metadata={"provenance": "retrieved evidence"},
             )
 
-    return InvestigationScene(
-        question=result.plan.question,
-        status=result.status,
-        mode=mode,
-        nodes=tuple(nodes.values()),
-        edges=tuple(edges.values()),
-        evidence=tuple(_evidence_payload(item) for item in result.evidence),
-        brief=_brief_payload(result),
-        trace=tuple(asdict(step) for step in result.trace),
-        gaps=result.gaps,
-    )
+    return tuple(nodes.values()), tuple(edges.values())
 
 
 def scene_payload(scene: InvestigationScene) -> dict[str, object]:
@@ -163,10 +177,10 @@ def _resource_type(entity_id: str) -> str:
 
 
 def _entity_label(entity_id: str) -> str:
-    known_projects = {
-        "91b4e591-b2dd-357a-9556-45feba981888": "CEMCAP · 641185",
-        "a3628245-f605-33d4-81ec-10086462f8a1": "LEILAC2 · 884170",
-        "4bdcdbb5-0dac-357a-94e6-98df709eccad": "HERCCULES · 101096691",
+    project = next((project for project in LIVE_SEED_PROJECTS if project.iri == entity_id), None)
+    if project is not None:
+        return f"{project.acronym} · {project.grant_id}"
+    known_entities = {
         "5ddbaa23-06d6-39f8-8b9f-9fd78d53f149": "LEAP",
         "671b76de-97f6-3c7e-8f4a-18cd5c5a24ce": "POLIMI",
         "2cc39403-e975-327f-8657-8df803af027d": "CEMCAP result metadata",
@@ -176,14 +190,14 @@ def _entity_label(entity_id: str) -> str:
         "2d34f8d6-c3ec-3593-8bb1-12e4a264a6a9": "HERCCULES result metadata",
     }
     short_name = _short_name(entity_id)
-    if short_name in known_projects:
-        return known_projects[short_name]
+    if short_name in known_entities:
+        return known_entities[short_name]
     resource_type = _resource_type(entity_id)
     if len(short_name) == 36 and short_name.count("-") == 4:
         prefix = {
-            "organization": "EURIO organisation",
-            "output": "CORDIS result",
-            "project": "EURIO project",
+            "organization": "Organisation",
+            "output": "Research output",
+            "project": "Research project",
             "role": "Participant role",
         }.get(resource_type, "Evidence entity")
         return f"{prefix} · {short_name[:8]}"

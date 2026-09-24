@@ -62,6 +62,7 @@ export interface Trace {
   action: string;
   count?: number;
   detail?: string;
+  nodeIds?: string[];
 }
 
 export interface ConversationMessage {
@@ -74,7 +75,7 @@ export interface Conversation {
   selectedNodeIds: string[];
   messages: ConversationMessage[];
   asOf: string | null;
-  intent?: "investigation" | "help" | "navigation" | "conversation";
+  intent?: "investigation" | "help" | "navigation" | "conversation" | "inspection";
   navigationTarget?: string | null;
 }
 

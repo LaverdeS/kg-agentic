@@ -63,7 +63,9 @@ class OpenAIBriefGenerator:
                 "prove capability or authorship; missing public data does not prove absence. "
                 "Every brief field is a support-bearing statement and must list one or more exact "
                 "supplied evidence IDs. Do not expose private reasoning; return only the requested "
-                "brief fields. Keep every text field below 120 characters. "
+                "brief fields. Write complete, plain-language sentences for a reader unfamiliar "
+                "with the dataset or technical shorthand; expand acronyms when space permits. "
+                "Keep every text field below 120 characters. "
                 "Cite exactly one evidence ID per field; give exactly one alternative and at most "
                 "one supporting claim. Do not repeat context or citations in prose."
             ),

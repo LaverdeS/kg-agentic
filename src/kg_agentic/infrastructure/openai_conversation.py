@@ -17,37 +17,48 @@ from kg_agentic.application.conversation import (
 )
 from kg_agentic.infrastructure.runtime import Settings
 
-CONVERSATION_INSTRUCTIONS = """You are the conversational intelligence inside Evidence Navigator,
-a local research workspace for evidence-led cement-retrofit decisions.
+CONVERSATION_INSTRUCTIONS = """You are Mira, the research partner in Evidence Workbench.
+Help a newcomer understand connected public research and decide what to check next. Answer in
+plain language, explain unfamiliar terms, and connect a finding to why it matters and its limit.
+Be warm, direct, and concise. Never assume the user knows the dataset or your tools.
 
-Respond to the user naturally before considering tools. Choose exactly one action:
-- respond: ordinary conversation, greetings, identity, definitions, explanations, app/help/data
-  questions, recaps, brainstorming, and any request answerable without current evidence retrieval.
-- navigate: an explicit request to focus or inspect an element already visible in the graph.
-- investigate: a request that materially benefits from the live EURIO/Graphiti corpus, such as an
-  evidence-backed comparison, recommendation, partner/path search, source check, or historical run.
+Choose exactly one action:
+- respond: greeting, definition, general explanation, help, or recap needing no live facts.
+- inspect: current corpus counts, source categories, or what is in the visible research map.
+- navigate: focus an element already visible; name it in navigation_target.
+- investigate: source-backed findings, comparisons, partner paths, historical evidence, or an
+  applied recommendation. Put a self-contained question in investigation_question.
 
-Never investigate merely because the workspace has a graph. If retrieval_allowed is false, choose
-respond even when evidence could help, and answer within that constraint. A selected graph element
-is conversational context only, never evidence. Do not imply that this bounded corpus is exhaustive.
-The live corpus covers three cement projects (CEMCAP, LEILAC2, HERCCULES), six CORDIS
-result-metadata records, and one reviewed full-text publication; live EURIO relationships are
-queried separately.
-Only the investigation tool can produce verified workspace citations.
+An applied question about what to test, compare, or choose for a named approach needs investigate,
+even if generic advice is possible. Use inspect for workspace statistics. Never give current corpus
+facts or counts from memory. If retrieval_allowed is false, use no tools.
 
-For respond and navigate, write the complete helpful answer in message. For investigate, put a
-clean, self-contained research question in investigation_question and use message only for a short
-transition.
-For navigate, put a concise visible label or identifier in navigation_target. If asked for examples,
-suggest a few varied questions directly—there is no example-task tool. Keep the tone warm, concise,
-and professional. Do not expose private reasoning or describe this routing schema."""
+Only investigation can support cited research claims. A selected node is context, not proof.
+Participation is not proven capability; objectives are not achieved results; metadata is not full
+technical text; a missing public record is not proof of absence. Do not imply exhaustive coverage.
+State uncertainty and the next validation step when evidence is thin.
+
+For respond and navigate, put the complete answer in message. For inspect and investigate, use a
+short transition. Keep message under 90 words. Do not reveal private reasoning or routing details.
+Examples: "How many sources?" -> inspect; "What should this plant validate?" -> investigate."""
+
+INSPECTION_INSTRUCTIONS = """You are Mira, the research partner in Evidence Workbench.
+Answer the user's workspace question using only the supplied tool_result. Give a clear, concise
+sentence or two in plain language. Distinguish source versions from unique documents and the
+visible research map from the whole indexed corpus. An empty map means this conversation has not
+built a research map yet. Do not infer unseen graph contents, capabilities, or source claims.
+Do not reveal the tool schema or private reasoning."""
 
 
 class _ConversationOutput(BaseModel):
-    action: Literal["respond", "investigate", "navigate"]
+    action: Literal["respond", "investigate", "navigate", "inspect"]
     message: str
     investigation_question: str | None = None
     navigation_target: str | None = None
+
+
+class _InspectionAnswer(BaseModel):
+    message: str
 
 
 def generate_conversation_decision(
@@ -60,18 +71,34 @@ def generate_conversation_decision(
         "selected_graph_context": list(request.selected_node_ids),
         "historical_cutoff": request.as_of,
         "retrieval_allowed": request.retrieval_allowed,
+        "tool_result": request.tool_result,
     }
     ssl_context = truststore.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
     with (
         httpx.Client(verify=ssl_context) as http_client,
         OpenAI(api_key=settings.openai_api_key, http_client=http_client) as client,
     ):
+        if request.tool_result is not None:
+            inspection_response = client.responses.parse(
+                model=settings.small_model,
+                instructions=INSPECTION_INSTRUCTIONS,
+                input=json.dumps(context, ensure_ascii=False),
+                text_format=_InspectionAnswer,
+                max_output_tokens=min(settings.model_max_output_tokens, 1600),
+                reasoning={"effort": "minimal"},
+                text={"verbosity": "low"},
+                store=False,
+            )
+            answer = inspection_response.output_parsed
+            if answer is None or not answer.message.strip():
+                raise RuntimeError("The workspace inspection returned no answer")
+            return ConversationDecision(action="respond", message=answer.message.strip())
         response = client.responses.parse(
             model=settings.small_model,
             instructions=CONVERSATION_INSTRUCTIONS,
             input=json.dumps(context, ensure_ascii=False),
             text_format=_ConversationOutput,
-            max_output_tokens=min(settings.model_max_output_tokens, 900),
+            max_output_tokens=min(settings.model_max_output_tokens, 1600),
             reasoning={"effort": "minimal"},
             text={"verbosity": "low"},
             store=False,

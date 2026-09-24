@@ -50,12 +50,12 @@ durable source-version catalog rather than querying the current Graphiti graph, 
 state cannot rank or expand its evidence. The live EURIO endpoint does not currently expose dated
 source versions for its relationship triples, so historical briefs omit those paths rather than
 presenting current relationships as past knowledge. A resulting source-only brief says so
-explicitly. The seed corpus is intentionally small: three project
-records and at most two result records per project for CEMCAP (`641185`), LEILAC2 (`884170`), and
-HERCCULES (`101096691`), plus reviewed passages from a versioned public CEMCAP D4.5 deliverable
-and a CEMCAP-linked publication. This demonstrates all four source categories while retaining
-result metadata as distinct from full-text evidence. D4.5 supports a technical retrofitability
-comparison, not an economic ranking or supplier qualification; project participation likewise
+explicitly. The frozen evaluation corpus retains the original three-project seed
+selection. The live corpus is now a larger connected cement-decarbonisation
+selection with project records, result metadata, and retained public documents.
+It still distinguishes metadata from full-text evidence. The reviewed CEMCAP
+D4.5 deliverable supports a technical retrofitability comparison, not an
+economic ranking or supplier qualification; project participation likewise
 identifies candidates for validation rather than proved capabilities.
 
 ## Run locally
@@ -102,8 +102,9 @@ uv run pyright
 
 ## Explore the evidence locally
 
-The optional local Evidence Workbench presents conversation, the cited brief,
-the returned 2D subgraph, source details, and public tool activity as peer views.
+The optional local Evidence Workbench presents conversation with Mira, the cited
+brief, an accumulating 2D research map, source details, and public tool activity
+as peer views.
 It is separate from the core investigation package and has no recorded or
 synthetic production mode:
 
@@ -121,21 +122,21 @@ npm run ui:build
 .\.venv\Scripts\python.exe -m local_experience.api.server
 ```
 
-Open `http://127.0.0.1:8000`. Ordinary conversation and explanations use a
-model-backed conversational path without touching the graph. The model can
-choose one bounded investigation tool when current evidence would materially
-improve the answer; an explicit request not to use the graph is enforced as a
-tool constraint. Example questions are prompt guidance, not a tool or canned
-answer workflow.
+Open `http://127.0.0.1:8000`. Mira can converse without touching the graph,
+inspect current corpus and map counts through a read-only tool, or invoke the
+bounded investigation tool when live evidence would improve an answer. The
+agent prompt contains no fixed corpus counts; a request not to use tools is
+enforced as a constraint. Example questions are guidance, not canned answers.
 
 An investigation invokes the same live EURIO, Graphiti/Neo4j, and OpenAI path as
-the CLI. The workbench then shows only that run's returned subgraph, citations,
-source-qualified metadata, and public activity stages. Selected graph context can
-guide a follow-up but never becomes evidence. Conversation memory is in-process,
-thread-scoped, and cleared by reset or server restart. The interface names the
-current bounded scope from the live source-version manifest rather than implying exhaustive CORDIS
-coverage. It keeps project/result metadata distinct from retained public full text, and it states
-uncertainty when a direct ranking or strict historical answer is unsupported. See [the corpus
+the CLI. Relationships and sources stream into the map when their retrieval
+finishes, before the final cited brief. The map grows across evidence questions
+in one thread; each answer still rests on its own retrieval. A different
+historical cutoff starts a separate map. Search, linked-element inspection,
+filters, and fit/zoom support exploration. Selected graph context can guide a
+follow-up but never becomes evidence. Reset clears the in-process thread and
+map. The interface reads source-version coverage live and states uncertainty
+when a ranking or strict historical answer is unsupported. See [the corpus
 selection and limits](docs/ingestion/cement-industrial-decarbonisation-v2.md).
 
 After starting the local server, `npm run ui:test` runs deterministic browser

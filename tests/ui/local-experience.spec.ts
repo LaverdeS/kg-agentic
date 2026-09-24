@@ -41,10 +41,11 @@ test("treats conversation and research context as peer work areas", async ({ pag
 
 test("starts honest about scope without forcing an onboarding script", async ({ page }) => {
   await page.emulateMedia({ reducedMotion: "reduce" });
+  await page.route("**/api/health", async (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ status: "ready", mode: "live-only", toolCount: 2, coverage: { projectRecords: 6, resultMetadataRecords: 10, fullTextRecords: 8, sourceVersions: 24 } }) }));
   await page.goto("/");
 
-  await expect(page.getByText("1 bounded evidence tool")).toBeVisible();
-  await expect(page.getByText("3 projects · 10 indexed source versions")).toBeVisible();
+  await expect(page.getByText("2 research tools available")).toBeVisible();
+  await expect(page.getByText("6 project records / 24 source versions")).toBeVisible();
   await expect(page.getByText("No graph needed yet.")).toBeVisible();
   await expect(page.getByRole("dialog")).not.toBeVisible();
   await page.getByRole("button", { name: "Sources" }).click();
@@ -119,5 +120,110 @@ test("a cited run connects the readable brief to sources, graph, and trace", asy
   await expect(page.getByText("SELECTED EVIDENCE")).toBeVisible();
   await expect(page.getByRole("link", { name: "Open original source ↗" })).toBeVisible();
   await page.getByRole("button", { name: "Trace" }).click();
-  await expect(page.getByText("evidence found")).toBeVisible();
+  await expect(page.getByText("Found public sources")).toBeVisible();
+});
+
+test("live graph stages grow a searchable map across questions while inspection leaves it intact", async ({ page }, testInfo) => {
+  const projectA = { id: "project:a", label: "Project A", kind: "project", source_url: null, metadata: {} };
+  const projectB = { id: "project:b", label: "Project B", kind: "project", source_url: null, metadata: {} };
+  const output = { id: "output:b", label: "Project B report", kind: "output", source_url: null, metadata: {} };
+  const first = { ...baseScene, status: "abstained", nodes: [projectA, output], edges: [{ id: "link:a", source: "project:a", target: "output:b", label: "hasResult", source_url: "https://example.test/a", metadata: {} }] };
+  const second = { ...baseScene, status: "abstained", nodes: [projectA, projectB, output], edges: [...first.edges, { id: "link:b", source: "project:b", target: "output:b", label: "hasResult", source_url: "https://example.test/b", metadata: {} }] };
+  let turn = 0;
+  await page.route("**/api/conversations", async (route) => {
+    turn += 1;
+    const investigating = turn < 3;
+    const graph = turn === 1 ? first : second;
+    const scene = {
+      ...(investigating ? graph : baseScene),
+      conversation: { threadId: "test", selectedNodeIds: [], messages: [{ role: "user", content: "Question" }, { role: "assistant", content: investigating ? "The evidence is incomplete." : "Two projects are in this map." }], asOf: null, intent: investigating ? "investigation" : "inspection", navigationTarget: null },
+    };
+    const body = [
+      investigating ? `event: activity\ndata: ${JSON.stringify({ action: "retrieved_path", count: graph.edges.length })}\n\n` : "",
+      investigating ? `event: graph_delta\ndata: ${JSON.stringify({ nodes: graph.nodes, edges: graph.edges })}\n\n` : "",
+      `event: completed\ndata: ${JSON.stringify(scene)}\n\n`,
+    ].join("");
+    await route.fulfill({ status: 200, contentType: "text/event-stream", body });
+  });
+  await page.goto("/");
+  await page.getByLabel("Your question").fill("First evidence question");
+  await page.getByRole("button", { name: "Send", exact: true }).click();
+  await expect(page.getByText("2 elements / 1 link")).toBeVisible();
+  await page.getByLabel("Your question").fill("Second evidence question");
+  await page.getByRole("button", { name: "Send", exact: true }).click();
+  await expect(page.getByText("3 elements / 2 links")).toBeVisible();
+  await expect(page.getByText("2 evidence questions in this map")).toBeVisible();
+  await expect(page.locator(".graph-live-status")).toBeHidden();
+  await page.screenshot({ path: testInfo.outputPath("research-map-overview.png"), animations: "disabled" });
+  await page.getByLabel("Find in this map").fill("Project B");
+  await page.locator(".graph-search-results button").first().click();
+  await expect(page.getByRole("complementary", { name: "Selected graph element" })).toContainText("Project B");
+  await page.screenshot({ path: testInfo.outputPath("research-map-desktop.png"), animations: "disabled" });
+  await page.getByRole("button", { name: "Ask about this" }).click();
+  await expect(page.getByLabel("Your question")).toHaveValue(/Project B/);
+  await page.getByLabel("Your question").fill("How many projects are in this map?");
+  await page.getByRole("button", { name: "Send", exact: true }).click();
+  await expect(page.getByText("3 elements / 2 links")).toBeVisible();
+  await expect(page.getByText("Two projects are in this map.")).toBeVisible();
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(page.getByRole("button", { name: "Fit", exact: true })).toBeVisible();
+  await expect(page.getByRole("complementary", { name: "Selected graph element" })).toBeVisible();
+  await page.locator(".research-workbench").screenshot({ path: testInfo.outputPath("research-map-mobile.png"), animations: "disabled" });
+});
+
+test("a failed historical run never pairs its graph with an older cited answer", async ({ page }) => {
+  const statement = { text: "Earlier evidence supports a current recommendation.", citations: [] };
+  const first = {
+    ...baseScene,
+    nodes: [{ id: "project:current", label: "Current project", kind: "project", source_url: null, metadata: {} }],
+    brief: { decision: statement, recommendation: statement, alternatives: [], uncertainty: statement, next_action: statement, claims: [] },
+    conversation: { threadId: "test", selectedNodeIds: [], messages: [{ role: "user", content: "Current question" }, { role: "assistant", content: statement.text }], asOf: null, intent: "investigation" },
+  };
+  let turn = 0;
+  await page.route("**/api/conversations", async (route) => {
+    turn += 1;
+    const body = turn === 1
+      ? `event: completed\ndata: ${JSON.stringify(first)}\n\n`
+      : [
+          `event: graph_delta\ndata: ${JSON.stringify({ nodes: [{ id: "project:past", label: "Past project", kind: "project", source_url: null, metadata: {} }], edges: [] })}\n\n`,
+          `event: failed\ndata: ${JSON.stringify({ message: "Historical source check failed." })}\n\n`,
+        ].join("");
+    await route.fulfill({ status: 200, contentType: "text/event-stream", body });
+  });
+  await page.goto("/");
+  await page.getByLabel("Your question").fill("Current question");
+  await page.getByRole("button", { name: "Send", exact: true }).click();
+  await expect(page.getByText("EVIDENCE-BACKED BRIEF")).toBeVisible();
+
+  await page.locator("summary", { hasText: "Historical cutoff" }).click();
+  await page.getByLabel("Only evidence public by").fill("2020-01-01");
+  await page.getByLabel("Your question").fill("Historical question");
+  await page.getByRole("button", { name: "Send", exact: true }).click();
+  await expect(page.getByRole("alert")).toContainText("Historical source check failed.");
+  await expect(page.getByText("EVIDENCE-BACKED BRIEF")).toBeHidden();
+  await expect(page.getByText("No graph needed yet.")).toBeVisible();
+});
+
+test("mobile-first reduced-motion research stays keyboard navigable", async ({ page }, testInfo) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  const node = { id: "project:mobile", label: "Mobile project", kind: "project", source_url: null, metadata: {} };
+  await mockConversation(page, {
+    ...baseScene,
+    status: "abstained",
+    nodes: [node],
+    conversation: { threadId: "mobile", selectedNodeIds: [], messages: [{ role: "user", content: "Find a project" }, { role: "assistant", content: "I found a project in this research map." }], asOf: null, intent: "investigation", navigationTarget: null },
+  }, [{ action: "retrieved_path", count: 0 }]);
+  await page.goto("/");
+  await page.getByLabel("Your question").fill("Find a project");
+  await page.getByLabel("Your question").press("Control+Enter");
+  await expect(page.getByText("1 element / 0 links")).toBeVisible();
+  await page.getByLabel("Find in this map").fill("Mobile project");
+  await page.keyboard.press("Tab");
+  await expect(page.locator(".graph-search-results button").first()).toBeFocused();
+  await page.keyboard.press("Enter");
+  await expect(page.getByRole("complementary", { name: "Selected graph element" })).toContainText("Mobile project");
+  await expect(page.locator(".graph-canvas canvas").first()).toBeVisible();
+  await expect.poll(() => page.locator(".graph-inspector").evaluate((element) => getComputedStyle(element).animationName)).toBe("none");
+  await page.locator(".research-workbench").screenshot({ path: testInfo.outputPath("mobile-first-reduced-motion.png"), animations: "disabled" });
 });

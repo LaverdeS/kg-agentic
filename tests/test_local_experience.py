@@ -4,12 +4,15 @@ from http.client import HTTPConnection
 from threading import Thread
 from typing import Any, cast
 
+from kg_agentic.application.cement import LIVE_SEED_PROJECTS
+from kg_agentic.knowledge.models import Relationship, StructuralPath
 from local_experience.api.conversation import (
     ConversationDecision,
     ConversationModelRequest,
     ConversationRequest,
     ConversationRunner,
 )
+from local_experience.api.scene import project_graph
 from local_experience.api.server import ExplorerHandler, ExplorerServer
 
 
@@ -25,12 +28,37 @@ def _live_scene(question: str, as_of: str | None = None) -> dict[str, object]:
         "evidence": [{"id": "current", "nodeId": "evidence:current"}],
         "brief": {
             "recommendation": {"text": "Validate the live result before deciding."},
+            "uncertainty": {"text": "Cost evidence is incomplete"},
+            "next_action": {"text": "Check site constraints"},
             "claims": [{"text": "A current claim."}],
         },
         "trace": [],
         "gaps": [],
         "asOf": as_of,
     }
+
+
+def test_projected_map_uses_configured_project_names_for_expanded_corpus() -> None:
+    project = LIVE_SEED_PROJECTS[-1]
+    paths = (
+        StructuralPath(
+            relationships=(
+                Relationship(
+                    subject=project.iri,
+                    predicate="http://example.test/hasResult",
+                    object="http://example.test/results/123",
+                    source_url="https://example.test/source",
+                ),
+            )
+        ),
+    )
+
+    nodes, edges = project_graph(paths, ())
+
+    assert next(node for node in nodes if node.id == project.iri).label == (
+        f"{project.acronym} · {project.grant_id}"
+    )
+    assert edges[0].source == project.iri
 
 
 def _runner(
@@ -46,8 +74,10 @@ def _runner(
         return next(remaining)
 
     return ConversationRunner(
-        lambda question, as_of: calls.append((question, as_of)) or _live_scene(question, as_of),
+        lambda question, as_of, emit: calls.append((question, as_of))
+        or _live_scene(question, as_of),
         decide,
+        lambda: {"projectRecords": 6, "sourceVersions": 24},
     )
 
 
@@ -55,10 +85,11 @@ def test_casual_turn_uses_a_natural_model_reply_without_touching_the_graph() -> 
     graph_calls: list[tuple[str, str | None]] = []
     model_questions: list[str] = []
     runner = ConversationRunner(
-        investigate_live_graph=lambda question, as_of: graph_calls.append((question, as_of))
+        investigate_live_graph=lambda question, as_of, emit: graph_calls.append((question, as_of))
         or _live_scene(question, as_of),
         conversation_model=lambda request: model_questions.append(request.question)
         or ConversationDecision(action="respond", message="Hi — what are you exploring?"),
+        inspect_workspace=lambda: {"projectRecords": 6, "sourceVersions": 24},
     )
 
     run = runner.run(ConversationRequest("consultant-1", "hi"))
@@ -72,7 +103,7 @@ def test_casual_turn_uses_a_natural_model_reply_without_touching_the_graph() -> 
     assert conversation["intent"] == "conversation"
 
 
-def test_runner_exposes_one_bounded_tool_and_investigates_only_when_selected() -> None:
+def test_runner_exposes_bounded_tools_and_investigates_only_when_selected() -> None:
     calls: list[tuple[str, str | None]] = []
     model_requests: list[ConversationModelRequest] = []
     runner = _runner(
@@ -95,11 +126,14 @@ def test_runner_exposes_one_bounded_tool_and_investigates_only_when_selected() -
     first = runner.run(ConversationRequest("consultant-1", "What should I inspect?"))
     second = runner.run(ConversationRequest("consultant-1", "What changes the decision?"))
 
-    assert runner.tool_count == 1
-    assert runner.tool_names == ("investigate_live_graph",)
+    assert runner.tool_count == 2
+    assert runner.tool_names == ("investigate_live_graph", "inspect_workspace")
     assert len(calls) == 2
     assert "Current user question: What should I inspect?" in calls[0][0]
-    assert model_requests[1].history[-1]["content"] == "Validate the live result before deciding."
+    assert model_requests[1].history[-1]["content"] == (
+        "Validate the live result before deciding. Cost evidence is incomplete. "
+        "Check site constraints."
+    )
     assert [event for event, _ in first.events] == [
         "activity",
         "activity",
@@ -109,7 +143,25 @@ def test_runner_exposes_one_bounded_tool_and_investigates_only_when_selected() -
     ]
     conversation = cast(dict[str, object], second.scene["conversation"])
     messages = cast(list[dict[str, str]], conversation["messages"])
-    assert messages[-1]["content"] == "Validate the live result before deciding."
+    assert messages[-1]["content"] == (
+        "Validate the live result before deciding. Cost evidence is incomplete. "
+        "Check site constraints."
+    )
+
+
+def test_support_activity_identifies_the_sources_used_in_the_answer() -> None:
+    scene = _live_scene("What matters?")
+    brief = cast(dict[str, object], scene["brief"])
+    recommendation = cast(dict[str, object], brief["recommendation"])
+    recommendation["citations"] = [{"evidence_id": "current"}]
+
+    events = ConversationRunner._events(scene, "investigation", streamed=True)
+
+    assert events == (("activity", {
+        "action": "claim_supported",
+        "count": 1,
+        "nodeIds": ["evidence:current"],
+    }),)
 
 
 def test_explanation_uses_the_model_reply_and_never_invents_a_graph() -> None:
@@ -136,6 +188,62 @@ def test_explanation_uses_the_model_reply_and_never_invents_a_graph() -> None:
     assert cast(dict[str, object], run.scene["conversation"])["intent"] == "conversation"
 
 
+def test_workspace_inspection_reads_live_counts_and_the_current_thread_map() -> None:
+    calls: list[tuple[str, str | None]] = []
+    requests: list[ConversationModelRequest] = []
+
+    def decide(request: ConversationModelRequest) -> ConversationDecision:
+        requests.append(request)
+        if request.tool_result is not None:
+            return ConversationDecision(
+                action="respond",
+                message="Six project records are indexed; your map has one project and one link.",
+            )
+        if "inspect" in request.question:
+            return ConversationDecision(
+                action="investigate", message="", investigation_question="inspect"
+            )
+        return ConversationDecision(action="inspect", message="")
+
+    runner = ConversationRunner(
+        lambda question, as_of, emit: calls.append((question, as_of))
+        or _live_scene(question, as_of),
+        decide,
+        lambda: {"projectRecords": 6, "sourceVersions": 24},
+    )
+    runner.run(ConversationRequest("one", "inspect a project"))
+    inspected = runner.run(ConversationRequest("one", "How many projects are indexed?"))
+
+    assert len(calls) == 1
+    assert requests[-1].tool_result == {
+        "indexed_corpus": {"projectRecords": 6, "sourceVersions": 24},
+        "current_map": {
+            "cutoff": None,
+            "element_count": 1,
+            "link_count": 1,
+            "element_types": {"other": 1},
+            "link_types": {"other": 1},
+            "examples": [],
+        },
+    }
+    assert [event for event, _ in inspected.events] == ["activity"]
+    assert inspected.scene["nodes"] == []
+    assert cast(dict[str, object], inspected.scene["conversation"])["intent"] == "inspection"
+    current_map = cast(dict[str, object], requests[-1].tool_result)["current_map"]
+    runner.run(ConversationRequest("one", "How many projects are indexed?", as_of="2020-01-01"))
+    assert cast(dict[str, object], requests[-1].tool_result)["current_map"] == current_map
+    runner.reset("one")
+    runner.run(ConversationRequest("one", "How many projects are indexed?"))
+    assert cast(dict[str, object], requests[-1].tool_result)["current_map"] == {
+        "cutoff": None,
+        "element_count": 0,
+        "link_count": 0,
+        "element_types": {},
+        "link_types": {},
+        "examples": [],
+    }
+
+
 def test_requesting_examples_gets_model_guidance_without_an_example_tool() -> None:
     calls: list[tuple[str, str | None]] = []
     runner = _runner(
@@ -157,7 +265,7 @@ def test_requesting_examples_gets_model_guidance_without_an_example_tool() -> No
         list[dict[str, str]], cast(dict[str, object], run.scene["conversation"])["messages"]
     )
     assert "partner path" in messages[-1]["content"]
-    assert runner.tool_names == ("investigate_live_graph",)
+    assert runner.tool_names == ("investigate_live_graph", "inspect_workspace")
 
 
 def test_explicit_graph_opt_out_is_a_hard_tool_constraint() -> None:
@@ -266,7 +374,7 @@ def test_health_reports_live_only_tools_and_recorded_route_is_absent(monkeypatch
         "status": "ready",
         "corpus": "cement-industrial-decarbonisation-v2",
         "mode": "live-only",
-        "toolCount": 1,
+        "toolCount": 2,
         "coverage": {
             "projectRecords": 0,
             "resultMetadataRecords": 0,

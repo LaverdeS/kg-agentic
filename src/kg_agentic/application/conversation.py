@@ -6,7 +6,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Literal
 
-ConversationAction = Literal["respond", "investigate", "navigate"]
+ConversationAction = Literal["respond", "investigate", "navigate", "inspect"]
 
 
 @dataclass(frozen=True, slots=True)
@@ -16,6 +16,7 @@ class ConversationModelRequest:
     selected_node_ids: tuple[str, ...] = ()
     as_of: str | None = None
     retrieval_allowed: bool = True
+    tool_result: dict[str, object] | None = None
 
 
 @dataclass(frozen=True, slots=True)

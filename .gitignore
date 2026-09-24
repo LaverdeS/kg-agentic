@@ -23,6 +23,7 @@ __pycache__/
 /.venv/
 /local_experience/client/dist/
 /local_experience/client/node_modules/
+/test-results/
 
 # Local editor and environment files
 /.idea/

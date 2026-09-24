@@ -1,6 +1,6 @@
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from datetime import datetime
-from typing import Protocol
+from typing import Literal, Protocol
 from urllib.parse import urlparse
 
 from kg_agentic.knowledge.models import (
@@ -43,6 +43,12 @@ class BriefGenerator(Protocol):
     ) -> DraftBrief: ...
 
 
+ProgressStage = Literal["retrieved_paths", "retrieved_evidence"]
+InvestigationProgress = Callable[
+    [ProgressStage, tuple[StructuralPath, ...], tuple[EvidenceItem, ...]], None
+]
+
+
 class InvestigationAgent:
     """Run a bounded investigation and admit only claims with resolvable evidence."""
 
@@ -67,7 +73,9 @@ class InvestigationAgent:
         self._corpus_id = corpus_id
         self._evidence_limit = evidence_limit
 
-    async def investigate(self, request: InvestigationRequest) -> InvestigationResult:
+    async def investigate(
+        self, request: InvestigationRequest, *, on_progress: InvestigationProgress | None = None
+    ) -> InvestigationResult:
         question = request.question.strip()
         if not question:
             raise ValueError("question must not be empty")
@@ -88,6 +96,8 @@ class InvestigationAgent:
         if request.as_of is not None:
             paths = tuple(path for path in paths if is_path_public_by(path, request.as_of))
         trace.append(TraceStep(action="retrieve_structural_paths", count=len(paths)))
+        if on_progress is not None:
+            on_progress("retrieved_paths", paths, ())
 
         evidence = await self._evidence_memory.search(
             query=question,
@@ -100,6 +110,8 @@ class InvestigationAgent:
                 item for item in evidence if is_evidence_public_by(item, request.as_of)
             )
         trace.append(TraceStep(action="retrieve_semantic_evidence", count=len(evidence)))
+        if on_progress is not None:
+            on_progress("retrieved_evidence", paths, evidence)
 
         if not evidence:
             missing = []
