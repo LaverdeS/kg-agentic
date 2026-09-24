@@ -5,7 +5,14 @@ from collections.abc import Sequence
 from datetime import datetime
 from pathlib import Path
 
-from kg_agentic.application.cement import CORPUS_ID, GROUP_ID, PROJECT_IRIS, PUBLIC_EVIDENCE
+from kg_agentic.application.cement import (
+    CORPUS_ID,
+    FROZEN_CORPUS_ID,
+    FROZEN_PROJECT_IRIS,
+    GROUP_ID,
+    PROJECT_IRIS,
+    PUBLIC_EVIDENCE,
+)
 from kg_agentic.application.evaluation import (
     EvaluationQuestion,
     EvaluationReport,
@@ -64,12 +71,17 @@ async def ingest_cement_slice(settings: Settings) -> IngestionReport:
 
 
 async def investigate_cement_slice(
-    settings: Settings, request: InvestigationRequest
+    settings: Settings,
+    request: InvestigationRequest,
+    *,
+    corpus_id: str = CORPUS_ID,
+    group_id: str = GROUP_ID,
+    project_iris: tuple[str, ...] = PROJECT_IRIS,
 ) -> tuple[InvestigationResult, dict[str, int]]:
     """Run a current or strict historical investigation through the concrete live adapters."""
     runtime = build_runtime(settings)
     try:
-        corpus_dir = settings.data_dir / "cordis-eurio" / CORPUS_ID
+        corpus_dir = settings.data_dir / "cordis-eurio" / corpus_id
         generator = OpenAIBriefGenerator(
             runtime.openai,
             model=settings.model,
@@ -82,8 +94,8 @@ async def investigate_cement_slice(
                 historical_catalog=JsonEvidenceCatalog(corpus_dir / "evidence.json"),
             ),
             brief_generator=generator,
-            project_iris=PROJECT_IRIS,
-            corpus_id=GROUP_ID,
+            project_iris=project_iris,
+            corpus_id=group_id,
             evidence_limit=settings.evidence_limit,
         )
         result = await agent.investigate(request)
@@ -126,14 +138,24 @@ async def compare_cement_slice(
 
 
 async def evaluate_cement_slice(
-    settings: Settings, questions: Sequence[EvaluationQuestion]
+    settings: Settings,
+    questions: Sequence[EvaluationQuestion],
+    *,
+    corpus_id: str = FROZEN_CORPUS_ID,
+    project_iris: tuple[str, ...] = FROZEN_PROJECT_IRIS,
 ) -> EvaluationReport:
     """Compare the concrete full slice with deliberately narrower retrieval baselines."""
 
     async def full_agent(
         request: InvestigationRequest,
     ) -> tuple[InvestigationResult, dict[str, int]]:
-        return await investigate_cement_slice(settings, request)
+        return await investigate_cement_slice(
+            settings,
+            request,
+            corpus_id=corpus_id,
+            group_id=f"cordis-eurio:{corpus_id}",
+            project_iris=project_iris,
+        )
 
     async def eurio_only(
         request: InvestigationRequest,
@@ -142,8 +164,8 @@ async def evaluate_cement_slice(
             structural_source=EurioStructuralSource(HttpSparqlQueryClient()),
             evidence_memory=_NoEvidenceMemory(),
             brief_generator=_UnexpectedBriefGenerator(),
-            project_iris=PROJECT_IRIS,
-            corpus_id=GROUP_ID,
+            project_iris=project_iris,
+            corpus_id=f"cordis-eurio:{corpus_id}",
             evidence_limit=settings.evidence_limit,
         )
         return await agent.investigate(request), {}
@@ -153,7 +175,7 @@ async def evaluate_cement_slice(
     ) -> tuple[InvestigationResult, dict[str, int]]:
         runtime = build_runtime(settings)
         try:
-            corpus_dir = settings.data_dir / "cordis-eurio" / CORPUS_ID
+            corpus_dir = settings.data_dir / "cordis-eurio" / corpus_id
             generator = OpenAIBriefGenerator(
                 runtime.openai,
                 model=settings.model,
@@ -166,8 +188,8 @@ async def evaluate_cement_slice(
                     historical_catalog=JsonEvidenceCatalog(corpus_dir / "evidence.json"),
                 ),
                 brief_generator=generator,
-                project_iris=PROJECT_IRIS,
-                corpus_id=GROUP_ID,
+                project_iris=project_iris,
+                corpus_id=f"cordis-eurio:{corpus_id}",
                 evidence_limit=settings.evidence_limit,
             )
             return await agent.investigate(request), generator.last_usage
@@ -206,12 +228,12 @@ def frozen_cement_source_versions(settings: Settings) -> list[str]:
     if (
         not isinstance(baseline, dict)
         or baseline.get("dataset_id") != "cordis-eurio"
-        or baseline.get("corpus_id") != CORPUS_ID
+        or baseline.get("corpus_id") != FROZEN_CORPUS_ID
         or not isinstance(expected, list)
         or not all(isinstance(item, str) for item in expected)
     ):
         raise ValueError(f"Invalid frozen evaluation baseline: {baseline_path}")
-    version_path = settings.data_dir / "cordis-eurio" / CORPUS_ID / "versions.json"
+    version_path = settings.data_dir / "cordis-eurio" / FROZEN_CORPUS_ID / "versions.json"
     if not version_path.exists():
         actual: list[str] = []
     else:

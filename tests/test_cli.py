@@ -33,7 +33,7 @@ def test_cli_reports_external_service_failure_without_traceback(monkeypatch, cap
         "run_id": record["run_id"],
         "command": "ingest",
         "source": "cordis-eurio",
-        "corpus": "cement-retrofit-v1",
+        "corpus": "cement-industrial-decarbonisation-v2",
         "duration_ms": record["duration_ms"],
         "error_type": "ExternalServiceError",
     }

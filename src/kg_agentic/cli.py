@@ -12,7 +12,7 @@ from uuid import uuid4
 
 from dotenv import load_dotenv
 
-from kg_agentic.application.cement import CORPUS_ID, CURRENT_QUESTION
+from kg_agentic.application.cement import CORPUS_ID, CURRENT_QUESTION, FROZEN_CORPUS_ID
 from kg_agentic.application.evaluation import EvaluationQuestion
 from kg_agentic.infrastructure.bootstrap import (
     compare_cement_slice,
@@ -183,7 +183,7 @@ async def _evaluate(
         "evaluation_started",
         run_id=run_id,
         source="cordis-eurio",
-        corpus=CORPUS_ID,
+        corpus=FROZEN_CORPUS_ID,
         questions=len(questions),
         systems=("agent", "eurio_only", "semantic_only"),
     )
@@ -199,7 +199,7 @@ async def _evaluate(
         "generated_at": datetime.now(UTC),
         "corpus": {
             "dataset_id": "cordis-eurio",
-            "corpus_id": CORPUS_ID,
+            "corpus_id": FROZEN_CORPUS_ID,
             "source_versions": frozen_source_versions,
         },
         "generation_settings": {
@@ -224,14 +224,12 @@ async def _evaluate(
             ),
         },
     }
-    output.write_text(
-        json.dumps(payload, default=_json_default, indent=2) + "\n", encoding="utf-8"
-    )
+    output.write_text(json.dumps(payload, default=_json_default, indent=2) + "\n", encoding="utf-8")
     _log(
         "evaluation_completed",
         run_id=run_id,
         source="cordis-eurio",
-        corpus=CORPUS_ID,
+        corpus=FROZEN_CORPUS_ID,
         output=str(output),
         failures=report.has_failures,
         duration_ms=round((monotonic() - started) * 1000),

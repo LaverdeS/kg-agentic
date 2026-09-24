@@ -72,7 +72,7 @@ Fill `OPENAI_API_KEY` and `NEO4J_PASSWORD` in the ignored `.env` file yourself. 
 file. The remaining settings have runnable local defaults; `.env.example` documents the model,
 embedding, concurrency, evidence-limit, and data-directory overrides.
 
-Start Neo4j, ingest the bounded corpus once, and run an investigation:
+Start Neo4j, ingest the bounded connected cement-decarbonisation corpus once, and run an investigation:
 
 ```powershell
 docker compose up -d neo4j
@@ -81,8 +81,12 @@ uv run kg-agentic investigate
 ```
 
 Ingestion stores versioned raw source payloads under the ignored `var/corpora/` directory and skips
-unchanged source versions on subsequent runs. Both commands contact real services and fail visibly
-when EURIO, Neo4j, or OpenAI is unavailable; there is no synthetic production fallback.
+unchanged source versions on subsequent runs. The live corpus is a six-project, decision-focused
+selection around cement capture, calcium looping, mineralisation, and carbonated supplementary
+cementitious materials; it is not exhaustive CORDIS coverage or a cost/readiness ranking dataset.
+The frozen `cement-retrofit-v1` evaluation corpus remains isolated from this live group. Both
+commands contact real services and fail visibly when EURIO, Neo4j, or OpenAI is unavailable; there
+is no synthetic production fallback.
 
 Useful checks and alternate output are:
 
@@ -129,8 +133,10 @@ the CLI. The workbench then shows only that run's returned subgraph, citations,
 source-qualified metadata, and public activity stages. Selected graph context can
 guide a follow-up but never becomes evidence. Conversation memory is in-process,
 thread-scoped, and cleared by reset or server restart. The interface names the
-current bounded scope—three projects and eleven indexed source versions—rather than
-implying exhaustive CORDIS coverage.
+current bounded scope from the live source-version manifest rather than implying exhaustive CORDIS
+coverage. It keeps project/result metadata distinct from retained public full text, and it states
+uncertainty when a direct ranking or strict historical answer is unsupported. See [the corpus
+selection and limits](docs/ingestion/cement-industrial-decarbonisation-v2.md).
 
 After starting the local server, `npm run ui:test` runs deterministic browser
 journeys with controlled SSE results for layout, ordinary chat, cited evidence,

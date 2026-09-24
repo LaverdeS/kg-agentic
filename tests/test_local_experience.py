@@ -246,7 +246,8 @@ def test_threads_are_isolated_and_resettable_without_retaining_results() -> None
     assert [len(request.history) for request in model_requests] == [0, 2, 0, 0]
 
 
-def test_health_reports_live_only_tools_and_recorded_route_is_absent() -> None:
+def test_health_reports_live_only_tools_and_recorded_route_is_absent(monkeypatch, tmp_path) -> None:
+    monkeypatch.setenv("KG_AGENTIC_DATA_DIR", str(tmp_path))
     server = ExplorerServer(("127.0.0.1", 0), ExplorerHandler)
     worker = Thread(target=server.handle_request)
     worker.start()
@@ -263,14 +264,14 @@ def test_health_reports_live_only_tools_and_recorded_route_is_absent() -> None:
     assert response.status == 200
     assert health == {
         "status": "ready",
-        "corpus": "cement-retrofit-v1",
+        "corpus": "cement-industrial-decarbonisation-v2",
         "mode": "live-only",
         "toolCount": 1,
         "coverage": {
-            "projectRecords": 3,
-            "resultMetadataRecords": 6,
-                "fullTextRecords": 2,
-                "sourceVersions": 11,
+            "projectRecords": 0,
+            "resultMetadataRecords": 0,
+            "fullTextRecords": 0,
+            "sourceVersions": 0,
         },
     }
 

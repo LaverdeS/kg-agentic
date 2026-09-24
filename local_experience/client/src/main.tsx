@@ -198,7 +198,7 @@ function App() {
     <main className="app-shell">
       <header className="topbar">
         <div className="brand"><span className="eyebrow">KG / AGENTIC</span><h1>Evidence Workbench</h1><p>Conversation, graph paths, and sources in one research surface.</p></div>
-        <div className="scope-note"><span>ACTIVE SCOPE</span><b>Cement retrofit</b><small>{coverage.projectRecords} projects · {coverage.sourceVersions} indexed source versions</small></div>
+        <div className="scope-note"><span>ACTIVE SCOPE</span><b>Cement decarbonisation</b><small>{coverage.projectRecords} projects · {coverage.sourceVersions} indexed source versions</small></div>
         <div className="header-actions"><button ref={guideButtonRef} className="text-button" onClick={() => setGuideOpen(true)}>Guide</button><div className="status"><span className={state === "running" ? "dot working" : "dot"} />{state === "running" ? "Interpreting your question" : `${toolCount ?? "…"} bounded evidence tool`}</div></div>
       </header>
       {guideOpen && <Guide onDismiss={dismissGuide} onStart={startGuidedExample} />}

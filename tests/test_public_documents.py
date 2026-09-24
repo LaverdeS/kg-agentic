@@ -1,7 +1,14 @@
 import json
 from pathlib import Path
 
-from kg_agentic.application.cement import PROJECT_IRIS, PUBLIC_EVIDENCE
+from kg_agentic.application.cement import (
+    CORPUS_ID,
+    FROZEN_CORPUS_ID,
+    FROZEN_PROJECT_IRIS,
+    FROZEN_PUBLIC_EVIDENCE,
+    LIVE_PROJECT_IRIS,
+    LIVE_PUBLIC_EVIDENCE,
+)
 from kg_agentic.infrastructure.eurio import EurioEvidenceSource
 from kg_agentic.infrastructure.public_documents import PublicEvidenceSource
 from kg_agentic.knowledge.models import PublicEvidenceSpec
@@ -53,9 +60,9 @@ async def test_public_full_text_keeps_source_bytes_distinct_from_metadata() -> N
 async def test_cement_seed_has_all_four_source_categories_with_retained_full_text() -> None:
     eurio_documents = await EurioEvidenceSource(
         RecordedEurioQueryClient(), corpus_id="cement-retrofit-v1"
-    ).fetch_documents(project_iris=PROJECT_IRIS, results_per_project=1)
+    ).fetch_documents(project_iris=FROZEN_PROJECT_IRIS, results_per_project=1)
     public_documents = await PublicEvidenceSource(RecordedDocumentClient()).fetch_documents(
-        PUBLIC_EVIDENCE
+        FROZEN_PUBLIC_EVIDENCE
     )
 
     documents = (*eurio_documents, *public_documents)
@@ -73,7 +80,15 @@ async def test_cement_seed_has_all_four_source_categories_with_retained_full_tex
     )
     assert "zenodo.org/records/2593240/files/" in deliverable.source_url
     assert deliverable.raw_payload is not None
-    assert deliverable.canonical_entity_iris == (PROJECT_IRIS[0],)
+    assert deliverable.canonical_entity_iris == (FROZEN_PROJECT_IRIS[0],)
     assert "p. iii" in deliverable.passage
     assert deliverable.publication_year == 2018
     assert deliverable.publication_precision == "year"
+
+
+def test_live_corpus_is_separate_and_materially_larger_than_the_frozen_benchmark() -> None:
+    assert CORPUS_ID != FROZEN_CORPUS_ID
+    assert len(FROZEN_PROJECT_IRIS) == 3
+    assert len(LIVE_PROJECT_IRIS) == 6
+    assert len(FROZEN_PUBLIC_EVIDENCE) == 2
+    assert len(LIVE_PUBLIC_EVIDENCE) == 5
