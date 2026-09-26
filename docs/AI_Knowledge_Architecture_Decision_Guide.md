@@ -34,7 +34,9 @@
 | Platform-specific traversal | [Gremlin](https://tinkerpop.apache.org/gremlin.html) where required | Follow platform capabilities ([Neptune comparison](https://docs.aws.amazon.com/neptune/latest/userguide/get-started-access-graph.html)) |
 | Temporal graph memory | [Graphiti](https://github.com/getzep/graphiti) → extraction, temporal facts, provenance, hybrid retrieval → Neo4j/FalkorDB | Framework above a database, not a query language ([quickstart](https://help.getzep.com/graphiti/getting-started/quick-start)) |
 
-**Hybrid search** combines keywords and vector similarity (meaning). An **ontology** defines concepts/relationships for either graph model; both support GraphRAG. For memory, separate **valid time** from **when learned**, and documents from mutable context; define authority, conflicts, scope and expiry.
+**Hybrid search** combines keywords and vector similarity (meaning). For memory, separate **valid time** from **when learned**, and documents from mutable context; define authority, conflicts, scope and expiry.
+
+**Ontology and graph choice:** An ontology can define concepts and relationships in either graph model; both support GraphRAG. In a property graph, labels, relationship types, taxonomy relationships and constraints can express a domain ontology. Cypher queries and application rules determine how that model is used; OWL entailments require additional tooling. RDF has standardized semantics, while RDFS/OWL can define formal entailments that require suitable reasoning support to use. SHACL validates RDF graphs against shapes; property-graph constraints or application checks may meet a validation need. Needing an ontology alone does not require RDF/OWL.
 
 ## Agentic AI: add agency only when justified
 
